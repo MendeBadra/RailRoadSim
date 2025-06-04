@@ -3,6 +3,7 @@ import pandas as pd
 
 import random
 from collections import Counter
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Union, List, Callable, Sequence
 
@@ -92,46 +93,33 @@ TERMINALS_TO_NUMBER = {
 # #     # ...
 # # }
 
-
-
+############################## Generation process #############################
 
 def generate_containers(
         probability_excel_path: Union[str, Path], 
         number_of_containers: int, 
-        date: str) -> pd.DataFrame:
+        date: str,
+        terminal_col: str="Терминал",
+        count_col: str="Count"
+        ) -> pd.DataFrame:
     """
     Generate containers based on terminal counts using Laplace smoothing.
     """
     probability_df = pd.read_excel(probability_excel_path)
-
-    # Extract raw counts from the "Count" column
-    raw_counts = probability_df["Count"].values
-
-    # Apply Laplace smoothing: add 1 to each count
+    raw_counts = probability_df[count_col].values
     smoothed_counts = raw_counts + 1
-
-    # Convert to probability distribution
     probabilities = smoothed_counts / smoothed_counts.sum()
-
-    # Get terminal names
-    terminals = probability_df["Терминал"].values
-
-    # Generate random terminal assignments based on smoothed probabilities
+    terminals = probability_df[terminal_col].values
     container_terminals = np.random.choice(
         terminals,
         size=number_of_containers,
         p=probabilities
     )
-
-    # Create DataFrame with container IDs and terminals
-    containers_df = pd.DataFrame({
-        'container_id': range(number_of_containers),
-        'Терминал': container_terminals
-    })
-
-    containers_df["Date"] = date
-
-    return containers_df
+    containers = [
+        {'container_id': i, 'Терминал': terminal, 'Date': date}
+        for i, terminal in enumerate(container_terminals)
+    ]
+    return containers
 
 def generate_train(
           number_of_wagons: int=40
@@ -147,11 +135,10 @@ def generate_trains(
         number_of_trains: int,
         number_of_wagons: int
         ) -> List[List[dict]]:
-    """Generate trains, which is an empty container for wagons where each wagon has a container."""
+    """Generate many trains"""
     return [generate_train(number_of_wagons) for _ in range(number_of_trains)]
 
-
-
+############################# END OF GENERATION ###############################
 
 # def decision_to_load_containers_(
 #         containers: pd.DataFrame, 
@@ -169,22 +156,29 @@ def generate_trains(
 #         train[i]['container_id'] = containers.loc[idx, 'container_id']
 #         train[i]['Терминал'] = containers.loc[idx, 'Терминал']
 #     return train
+####################### DECISIONS BANK ##############################################
 
-def decision_random(containers: pd.DataFrame) -> Sequence[int]:
+#
+# Decision is the function that takes in List of containers and then makes a decision
+# outputs an indices on which where to put where.
+#
+def decision_random(containers: List[dict]) -> Sequence[int]:
     """
     Randomly shuffle the containers and return their indices.
     """
-    indices = containers.index.to_numpy()
+    indices = list(range(len(containers)))
     np.random.shuffle(indices)
     return indices
 
-def decision_group_by_terminal(containers: pd.DataFrame) -> Sequence[int]:
+def decision_group_by_terminal(containers: List[dict]) -> Sequence[int]:
     """
     Group containers by 'Терминал' and return their indices in grouped order.
     """
-    return containers.sort_values('Терминал').index.to_numpy()
+    terminals = [(i, c['Терминал']) for i, c in enumerate(containers)]
+    sorted_indices = [i for i, _ in sorted(terminals, key=lambda x: x[1])]
+    return sorted_indices
 
-def decision_group_probalistic(containers: pd.DataFrame, 
+def decision_group_probalistic(containers: List[dict], 
                                prob_same_terminal: float = 0.5,
                                seed: int = 42) -> Sequence[int]:
     """
@@ -195,9 +189,9 @@ def decision_group_probalistic(containers: pd.DataFrame,
     np.random.seed(seed)
 
     # Count how many containers are at each terminal
-    terminal_counts = Counter(containers["Терминал"])
+    terminal_counts = Counter(c['Терминал'] for c in containers)
     container_indices_by_terminal = {
-        terminal: containers[containers["Терминал"] == terminal].index.tolist()
+        terminal: [i for i, c in enumerate(containers) if c['Терминал'] == terminal]
         for terminal in terminal_counts
     }
 
@@ -210,7 +204,7 @@ def decision_group_probalistic(containers: pd.DataFrame,
         terminals,
         weights=[terminal_counts[t] for t in terminals]
     )[0]
-    
+
     current_list = container_indices_by_terminal[current_terminal]
     chosen = current_list.pop()
     sequence.append(chosen)
@@ -241,14 +235,19 @@ def decision_group_probalistic(containers: pd.DataFrame,
     return sequence
 
 
-def decision_optimal(containers: pd.DataFrame) -> Sequence[int]:
+def decision_optimal(containers: List[dict]) -> Sequence[int]:
     """
     Optimal decision based on the heuristic that the containers should be loaded
     in the geographic as well as regional order.
     Could've calculated the preferred order using the region and station order.
+
+    containers variable is a list of dictionaries.
+    Each containers should have:
+     - "Терминал" 
+     - "container_id"
+     - "Date" which means when the container first arrived at Zamiin Uud.
     """
     # Hardcoded optimal decision
-    # UNDER CONSTRUCTION
     # order = [7, 1, 2, 4, 0, 3, 6, 5, 8, 9, 10, 11] # using this order preference to populate the trains
 
     # for i, idx in enumerate(order):
@@ -257,8 +256,8 @@ def decision_optimal(containers: pd.DataFrame) -> Sequence[int]:
     
     # Group containers by terminal
     terminal_groups = {}
-    for idx, row in containers.iterrows():
-        terminal = row['Терминал']
+    for idx, container in enumerate(containers):
+        terminal = container['Терминал']
         terminal_num = TERMINALS_TO_NUMBER[terminal]
         if terminal_num not in terminal_groups:
             terminal_groups[terminal_num] = []
@@ -273,6 +272,9 @@ def decision_optimal(containers: pd.DataFrame) -> Sequence[int]:
     return sequence
 
 
+
+
+############################# - END-DECISION ##########################################
 
 def train_to_terminal_sequence(train: List[dict]) -> List[int]:
     """
@@ -308,29 +310,32 @@ def calculate_classification_cost(horoonii_too: int) -> int:
     return horoonii_zardal
 
 
-def load_containers_to_trains(containers: pd.DataFrame,
+def load_containers_to_trains(containers: List[dict],
                                trains: List[List[dict]], 
-                               decision_function: Callable) -> None:
+                               decision_function: Callable) -> List[List[dict]]:
     """
     Loads containers onto trains in-place. Each train is filled up to its capacity,
     and loaded containers are removed from the available pool for subsequent trains.
+    
+    Returns the updated trains list for convenience.
     """
-    available_indices = set(containers.index)
-    # print(f"available_indices: {available_indices}")
+    available_indices = set(range(len(containers)))
     for train in trains:
-        # Only consider containers that haven't been loaded yet
-        available_containers = containers.loc[list(available_indices)]
+        # Build a list of available containers (list of dicts)
+        available_containers = [containers[i] for i in available_indices]
+        # Map local indices in available_containers to original indices in containers
+        idx_map = {i: orig_idx for i, orig_idx in enumerate(available_indices)}
+        # Get the order in which to load containers
         ordered_indices = decision_function(available_containers)
-        # Select up to the train's capacity
-        selected_indices = ordered_indices[:len(train)]
+        # Select indices for this train (up to train capacity)
+        selected_indices = [idx_map[i] for i in ordered_indices[:len(train)]]
         for i, idx in enumerate(selected_indices):
-            train[i]['container_id'] = containers.loc[idx, 'container_id']
-            train[i]['Терминал'] = containers.loc[idx, 'Терминал']
-        # Remove loaded containers from the pool
+            train[i]['container_id'] = containers[idx]['container_id']
+            train[i]['Терминал'] = containers[idx]['Терминал']
         available_indices -= set(selected_indices)
-        # If no more containers, break
         if not available_indices:
             break
+    return trains
 
 # def load_containers_to_trains_(containers: pd.DataFrame,
 #                               trains: List[List[dict]],
@@ -365,11 +370,12 @@ def calculate_penalty_cost(train_sequences: List[int]) -> float:
             print(f"Terminal {terminal} appears {count} times")
     # TODO: For
     
-    
+def dataframe_to_list(df: pd.DataFrame):
+    return df.to_dict(orient="records")
 
     
 
-if __name__ != "__main__":
+if __name__ == "__main__":
     simulation_data = Path("simulation_artifacts")
     input_dir = Path("input")
     probability_excel_path = input_dir / "UBmagad.xlsx"
@@ -383,6 +389,7 @@ if __name__ != "__main__":
     # For reproducing the results
     # containers.to_excel(simulation_data / f"containers_{date}.xlsx", index=False)
     containers = pd.read_excel(simulation_data / f"containers_{date}.xlsx")
+    containers = dataframe_to_list(containers)
     # Save containers to csv
     
     # print(containers)
@@ -393,14 +400,13 @@ if __name__ != "__main__":
     # Save trains to csv
     # pd.DataFrame(trains).to_csv(simulation_data / "trains.csv", index=False)
     
-    # decision_function = lambda containers: decision_group_probalistic(containers,
-    #                                                                   prob_same_terminal=PROBABILITY,
-    #                                                                   seed=42)
+    def decision_function(containers):
+        return decision_group_probalistic(containers, prob_same_terminal=PROBABILITY, seed=42)
     # decision_function = decision_random
     # decision_function = decision_group_by_terminal
-    decision_function = decision_optimal
+    # decision_function = decision_optimal
 
-    load_containers_to_trains(containers, trains, decision_function)
+    trains = load_containers_to_trains(containers, trains, decision_function)
     print(f"Trains: {[wagon['Терминал'] for wagon in trains[0]]}")
     print('LENGTH1=',len(trains[0]), "LENGTH2=",len(trains[1]))
     trains_terminal_sequences = [train_to_terminal_sequence(train) for train in trains]
@@ -420,7 +426,6 @@ if __name__ != "__main__":
     print('expense_sum',expense_sum)
 
 
-from datetime import datetime, timedelta
 
 def linear_increase(start: int, end: int, steps: int):
     """Returns a list of integers linearly increasing from start to end inclusive."""
@@ -428,8 +433,8 @@ def linear_increase(start: int, end: int, steps: int):
 
 
 
-
-if __name__ == "__main__":
+# GENERATING the synthetic data 
+if __name__ != "__main__":
     simulation_data = Path("simulation_artifacts")
     input_dir = Path("input")
     probability_excel_path = input_dir / "UBmagad.xlsx"
@@ -469,5 +474,5 @@ if __name__ == "__main__":
         )
         all_data.append(containers_df)
     monthly_df = pd.concat(all_data, ignore_index=True)
-    monthly_df.to_excel(simulation_data / "june_2025_containters_extended.xlsx", index=False)
+    monthly_df.to_excel(simulation_data / "june_2025_containters_extended_smoothed.xlsx", index=False)
     print(monthly_df)
