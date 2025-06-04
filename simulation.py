@@ -10,7 +10,7 @@ from typing import Union, List, Callable, Sequence
 NUMBER_OF_CONTAINERS = 110
 NUMBER_OF_TRAINS = 2
 NUMBER_OF_WAGONS = 55
-PROBABILITY = 0.7
+PROBABILITY = 0.6
 
 LOCOMOTIVE_COST_PER_HOUR = 210000 # MNT
 LOCOMOTIVE_COST_PER_MINUTE = LOCOMOTIVE_COST_PER_HOUR / 60  # 3500 MNT per minute
@@ -39,20 +39,20 @@ STATIONS = ['УБ', 'Ам', 'То'] # redundant
 #     'Номин Тр': {'distance': 20, 'capacity': 8, 'station': 'То'},
 # }
 
-# excelees Urtuunii salbar
+# excel(screenshot) Urtuunii salbar
 TERMINALS = {
     'УБ МЧ': {'distance': 8, 'capacity': 33, 'station': 'УБ', 'region': 1},
     'Туушин': {'distance': 20, 'capacity': 8, 'station': 'УБ', 'region': 1},
-    'Монгол экс': {'distance': 20, 'capacity': 13, 'station': 'УБ', 'region': 1},
-    'материалын импекс': {'distance': 40, 'capacity': 18, 'station': 'УБ', 'region': 2},
-    'Прогресс': {'distance': 60, 'capacity': 14, 'station': 'УБ', 'region': 1},
-    'Эрин': {'distance': 60, 'capacity': 26, 'station': 'УБ', 'region': 2},
-    'Техник импорт': {'distance': 40, 'capacity': 16, 'station': 'УБ', 'region': 2},
-    'Амгалан': {'distance': 15, 'capacity': 15, 'station': 'Ам', 'region': 1},
-    'Интердэсишн': {'distance': 20, 'capacity': 15, 'station': 'То', 'region': 1},
+    'Монгол экс': {'distance': 20, 'capacity': 10, 'station': 'УБ', 'region': 1},
+    'материалын импекс': {'distance': 40, 'capacity': 23, 'station': 'УБ', 'region': 2},
+    'Прогресс': {'distance': 60, 'capacity': 13, 'station': 'УБ', 'region': 1},
+    'Эрин': {'distance': 60, 'capacity': 7, 'station': 'УБ', 'region': 2},
+    'Техник импорт': {'distance': 40, 'capacity': 12, 'station': 'УБ', 'region': 2},
+    'Амгалан': {'distance': 15, 'capacity': 12, 'station': 'Ам', 'region': 1},
+    'Интердэсишн': {'distance': 20, 'capacity': 8, 'station': 'То', 'region': 1},
     'Монгол транс': {'distance': 10, 'capacity': 15, 'station': 'То', 'region': 1},
-    'Толгойт МЧ': {'distance': 5, 'capacity': 8, 'station': 'То', 'region': 1},
-    'Номин Трэйдинг': {'distance': 20, 'capacity': 8, 'station': 'То', 'region': 2},
+    'Толгойт МЧ': {'distance': 5, 'capacity': 10, 'station': 'То', 'region': 1},
+    'Номин Трэйдинг': {'distance': 20, 'capacity': 8, 'station': 'То', 'region': 2}, # UB Impex
 }
 
 # TODO: Calimariin zardal
@@ -148,22 +148,22 @@ def generate_trains(
 
 
 
-def decision_to_load_containers_(
-        containers: pd.DataFrame, 
-        train: List[dict], 
-        decision_function: Callable) -> List[dict]:
-    """
-    Fill the train (list of dicts) with containers according to the decision_function.
-    The train is a fixed-size list of dicts with 'container_id' and 'Терминал' fields.
-    Warning: Mutates the train 
-    """
-    # random.shuffle(containers)
-    ordered_indices = decision_function(containers)
-    # Only fill up to the train's capacity
-    for i, idx in enumerate(ordered_indices[:len(train)]):
-        train[i]['container_id'] = containers.loc[idx, 'container_id']
-        train[i]['Терминал'] = containers.loc[idx, 'Терминал']
-    return train
+# def decision_to_load_containers_(
+#         containers: pd.DataFrame, 
+#         train: List[dict], 
+#         decision_function: Callable) -> List[dict]:
+#     """
+#     Fill the train (list of dicts) with containers according to the decision_function.
+#     The train is a fixed-size list of dicts with 'container_id' and 'Терминал' fields.
+#     Warning: Mutates the train 
+#     """
+#     # random.shuffle(containers)
+#     ordered_indices = decision_function(containers)
+#     # Only fill up to the train's capacity
+#     for i, idx in enumerate(ordered_indices[:len(train)]):
+#         train[i]['container_id'] = containers.loc[idx, 'container_id']
+#         train[i]['Терминал'] = containers.loc[idx, 'Терминал']
+#     return train
 
 def decision_random(containers: pd.DataFrame) -> Sequence[int]:
     """
@@ -238,11 +238,34 @@ def decision_group_probalistic(containers: pd.DataFrame,
 
 def decision_optimal(containers: pd.DataFrame) -> Sequence[int]:
     """
-    Optimal decision
+    Optimal decision based on the heuristic that the containers should be loaded
+    in the geographic as well as regional order.
+    Could've calculated the preferred order using the region and station order.
     """
     # Hardcoded optimal decision
-    order = [7, 1, 2, 4, 0, 3, 6, 5, 8, 9, 10, 11]
-    containers_sequence = 
+    # UNDER CONSTRUCTION
+    # order = [7, 1, 2, 4, 0, 3, 6, 5, 8, 9, 10, 11] # using this order preference to populate the trains
+
+    # for i, idx in enumerate(order):
+    # return order
+    preferred_order = [7, 1, 2, 4, 0, 3, 6, 5, 8, 9, 10, 11]  # using TERMINALS_TO_NUMBER values
+    
+    # Group containers by terminal
+    terminal_groups = {}
+    for idx, row in containers.iterrows():
+        terminal = row['Терминал']
+        terminal_num = TERMINALS_TO_NUMBER[terminal]
+        if terminal_num not in terminal_groups:
+            terminal_groups[terminal_num] = []
+        terminal_groups[terminal_num].append(idx)
+    
+    # Build sequence following preferred order
+    sequence = []
+    for terminal_num in preferred_order:
+        if terminal_num in terminal_groups:
+            sequence.extend(terminal_groups[terminal_num])
+    
+    return sequence
 
 
 
@@ -270,12 +293,15 @@ def count_transitions(seq: Union[List, str]) -> int:
             transitions += 1
     return transitions
 
-def count_out(horoonii_too: int, huleelgiin_chingeleg: int = 0, huleelgiin_chingelegiin_time: int = 0, total_terminaluudiin_hureh_zai: int = 318) -> int:
+def calculate_classification_cost(horoonii_too: int) -> int:
+
+    #  huleelgiin_chingeleg: int = 0, huleelgiin_chingelegiin_time: int = 0, total_terminaluudiin_hureh_zai: int = 318
     horoonii_zardal =horoonii_too = horoonii_too * MINUTES_PER_HOROO * LOCOMOTIVE_COST_PER_MINUTE # tsagt 210k minuted 3.5k
-    huleelgiin_zardal = huleelgiin_chingeleg * huleelgiin_chingelegiin_time * PENALTY_PER_MINUTE # minutaar
-    terminal_hurgeh_zardal = total_terminaluudiin_hureh_zai * LOCOMOTIVE_COST_PER_MINUTE
-    niit_zardal = horoonii_zardal + huleelgiin_zardal + terminal_hurgeh_zardal
-    return niit_zardal
+    # huleelgiin_zardal = huleelgiin_chingeleg * huleelgiin_chingelegiin_time * PENALTY_PER_MINUTE # minutaar
+    # terminal_hurgeh_zardal = total_terminaluudiin_hureh_zai * LOCOMOTIVE_COST_PER_MINUTE
+    # niit_zardal = horoonii_zardal + huleelgiin_zardal + terminal_hurgeh_zardal
+    return horoonii_zardal
+
 
 def load_containers_to_trains(containers: pd.DataFrame,
                                trains: List[List[dict]], 
@@ -285,6 +311,7 @@ def load_containers_to_trains(containers: pd.DataFrame,
     and loaded containers are removed from the available pool for subsequent trains.
     """
     available_indices = set(containers.index)
+    # print(f"available_indices: {available_indices}")
     for train in trains:
         # Only consider containers that haven't been loaded yet
         available_containers = containers.loc[list(available_indices)]
@@ -300,6 +327,17 @@ def load_containers_to_trains(containers: pd.DataFrame,
         if not available_indices:
             break
 
+# def load_containers_to_trains_(containers: pd.DataFrame,
+#                               trains: List[List[dict]],
+#                               decision_function: Callable) -> None:
+#     """
+#     Loads containers onto trains in-place. Each train is filled up to its capacity,
+#     and loaded containers are removed from the available pool for subsequent trains.
+#     """
+#     pass
+    
+    
+
 
 
 
@@ -309,27 +347,37 @@ def step_():
 
 
 
-def calculate_classification_cost(train: List[dict]) -> float:
-    """
-    Calculate the cost of classifying a train.
-    """
-    pass
+def calculate_penalty_cost(train_sequences: List[int]) -> float:
+    unique_terminals = []
+    for train_sequence in train_sequences:
+        unique_terminals.extend(set(train_sequence))
+    
+    terminal_counts = {terminal: 0 for terminal in unique_terminals}
+    for terminal in train_sequence:
+        terminal_counts[terminal] += 1
+    for terminal, count in terminal_counts.items():
+        if count > 1:
+            print(f"Terminal {terminal} appears {count} times")
+    # TODO: For
+    
+    
 
-def calculate_delivery_cost(train: List[dict]) -> float:
-    pass
+    
 
-if __name__ == "__main__":
+if __name__ != "__main__":
     simulation_data = Path("simulation_artifacts")
     input_dir = Path("input")
     probability_excel_path = input_dir / "UBmagad.xlsx"
-    containers = generate_containers(
-        probability_excel_path,
-        number_of_containers=NUMBER_OF_CONTAINERS,
-        date="2025-01-01"
-    )
+
+    date="2025-06-01"
+    # containers = generate_containers(
+    #     probability_excel_path,
+    #     number_of_containers=NUMBER_OF_CONTAINERS,
+    #     date=date
+    # )
     # For reproducing the results
-    # containers.to_excel(simulation_data / "containers.xlsx", index=False)
-    #   containers = pd.read_excel(simulation_data / "containers.xlsx")
+    # containers.to_excel(simulation_data / f"containers_{date}.xlsx", index=False)
+    containers = pd.read_excel(simulation_data / f"containers_{date}.xlsx")
     # Save containers to csv
     
     # print(containers)
@@ -343,21 +391,78 @@ if __name__ == "__main__":
     # decision_function = lambda containers: decision_group_probalistic(containers,
     #                                                                   prob_same_terminal=PROBABILITY,
     #                                                                   seed=42)
-    decision_function = decision_random
+    # decision_function = decision_random
     # decision_function = decision_group_by_terminal
+    decision_function = decision_optimal
 
     load_containers_to_trains(containers, trains, decision_function)
     print(f"Trains: {[wagon['Терминал'] for wagon in trains[0]]}")
     print('LENGTH1=',len(trains[0]), "LENGTH2=",len(trains[1]))
     trains_terminal_sequences = [train_to_terminal_sequence(train) for train in trains]
     print(trains_terminal_sequences)
+    calculate_penalty_cost(trains_terminal_sequences)
     # horoonii_too = count_transitions(trains_terminal_sequences)
     # print('HOROODOLT',horoonii_too)
     expense_sum = 0.0
     for train_terminal_sequence in trains_terminal_sequences:
         horoonii_too = count_transitions(train_terminal_sequence)
         # horoonii_too_dict[train_terminal_sequence] = horoonii_too
-        expense_sum += count_out(horoonii_too=horoonii_too)
+        classification_cost = calculate_classification_cost(horoonii_too=horoonii_too)
+        print(f"Huruunii zardal: {classification_cost}")
+        expense_sum += classification_cost
         print('HOROODOLT',horoonii_too)
 
     print('expense_sum',expense_sum)
+
+
+from datetime import datetime, timedelta
+
+def linear_increase(start: int, end: int, steps: int):
+    """Returns a list of integers linearly increasing from start to end inclusive."""
+    return [round(start + i * (end - start) / (steps - 1)) for i in range(steps)]
+
+
+
+
+if __name__ == "__main__":
+    simulation_data = Path("simulation_artifacts")
+    input_dir = Path("input")
+    probability_excel_path = input_dir / "UBmagad.xlsx"
+    start_date = datetime(2025, 6, 1)
+    end_date = datetime(2025, 6, 30)
+    all_data = []
+
+    # === Generate from May 24 to June 1 (ramping up)
+    ramp_start_date = datetime(2025, 5, 24)
+    ramp_end_date = datetime(2025, 6, 1)
+    ramp_days = (ramp_end_date - ramp_start_date).days + 1
+
+    # Simulate containers from small number (e.g. 10) up to NUMBER_OF_CONTAINERS
+    ramp_numbers = linear_increase(10, NUMBER_OF_CONTAINERS, ramp_days)
+
+    all_data = []
+
+    for i in range(ramp_days):
+        current_date = ramp_start_date + timedelta(days=i)
+        date_str = current_date.strftime("%Y-%m-%d")
+
+        containers_df = generate_containers(
+            probability_excel_path,
+            number_of_containers=ramp_numbers[i],
+            date=date_str
+        )
+        all_data.append(containers_df)
+
+    for i in range((end_date - start_date).days + 1):
+        current_date = start_date + timedelta(days=i)
+        date_str = current_date.strftime("%Y-%m-%d")
+    
+        containers_df = generate_containers(
+            probability_excel_path,
+            number_of_containers=NUMBER_OF_CONTAINERS,
+            date=date_str
+        )
+        all_data.append(containers_df)
+    monthly_df = pd.concat(all_data, ignore_index=True)
+    monthly_df.to_excel(simulation_data / "june_2025_containters_extended.xlsx", index=False)
+    print(monthly_df)
