@@ -94,30 +94,35 @@ TERMINALS_TO_NUMBER = {
 
 
 
+
 def generate_containers(
         probability_excel_path: Union[str, Path], 
         number_of_containers: int, 
         date: str) -> pd.DataFrame:
     """
-    Generate containers based on probability distribution from excel file.
+    Generate containers based on terminal counts using Laplace smoothing.
     """
     probability_df = pd.read_excel(probability_excel_path)
-    # Extract probabilities from the "Хувь" column
-    probabilities = probability_df["Хувь"].values
-    
-    # Normalize probabilities to sum to 1
-    probabilities = probabilities / probabilities.sum()
-    
+
+    # Extract raw counts from the "Count" column
+    raw_counts = probability_df["Count"].values
+
+    # Apply Laplace smoothing: add 1 to each count
+    smoothed_counts = raw_counts + 1
+
+    # Convert to probability distribution
+    probabilities = smoothed_counts / smoothed_counts.sum()
+
     # Get terminal names
     terminals = probability_df["Терминал"].values
-    
-    # Generate random terminal assignments based on probabilities
+
+    # Generate random terminal assignments based on smoothed probabilities
     container_terminals = np.random.choice(
         terminals,
         size=number_of_containers,
         p=probabilities
     )
-    
+
     # Create DataFrame with container IDs and terminals
     containers_df = pd.DataFrame({
         'container_id': range(number_of_containers),
@@ -125,7 +130,7 @@ def generate_containers(
     })
 
     containers_df["Date"] = date
-    
+
     return containers_df
 
 def generate_train(
