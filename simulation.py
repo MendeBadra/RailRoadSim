@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 
+import random
+from collections import Counter
 from pathlib import Path
 from typing import Union, List, Callable, Sequence
 
@@ -8,6 +10,7 @@ from typing import Union, List, Callable, Sequence
 NUMBER_OF_CONTAINERS = 100
 NUMBER_OF_TRAINS = 2
 NUMBER_OF_WAGONS = 55
+PROBABILITY = 0.7
 TERMINALS = {
     'УБ МЧ': {'distance': 0, 'capacity': 0},
     'Туушин': {'distance': 0, 'capacity': 0},
@@ -89,7 +92,31 @@ def generate_trains(
     """Generate trains, which is an empty container for wagons where each wagon has a container."""
     return [generate_train(number_of_wagons) for _ in range(number_of_trains)]
 
-import random
+
+def train_to_terminal_sequence(train: List[dict]) -> List[int]:
+    """
+    Transform a train (list of dicts with 'Терминал') into a sequence of ints using TERMINALS_TO_NUMBER.
+    Returns a list of ints representing the terminal sequence for the train.
+    """
+    return [TERMINALS_TO_NUMBER.get(wagon['Терминал'], -1) for wagon in train if wagon['Терминал'] is not None]
+
+def count_transitions(seq: Union[List, str]) -> int:
+    """
+    Хөрш өөр элементүүдийн огтлолын тоог тоолно.
+
+    :param seq: Жагсаалт (List) эсвэл тэмдэгт мөр (str)
+    :return: Огтлолын тоо (int)
+    """
+    if isinstance(seq, str):
+        seq = seq.split(",")
+
+    transitions = 0
+    for i in range(1, len(seq)):
+        if seq[i] != seq[i - 1]:
+            transitions += 1
+    return transitions
+
+
 def decision_to_load_containers_(
         containers: pd.DataFrame, 
         train: List[dict], 
@@ -121,28 +148,63 @@ def decision_group_by_terminal(containers: pd.DataFrame) -> Sequence[int]:
     """
     return containers.sort_values('Терминал').index.to_numpy()
 
-def train_to_terminal_sequence(train: List[dict]) -> List[int]:
+def decision_group_probalistic(containers: pd.DataFrame, 
+                               prob_same_terminal: float = PROBABILITY,
+                               seed: int = 42) -> Sequence[int]:
     """
-    Transform a train (list of dicts with 'Терминал') into a sequence of ints using TERMINALS_TO_NUMBER.
-    Returns a list of ints representing the terminal sequence for the train.
+    Reorder containers such that adjacent ones are likely to share the same terminal,
+    using a Markov-style probability model.
     """
-    return [TERMINALS_TO_NUMBER.get(wagon['Терминал'], -1) for wagon in train if wagon['Терминал'] is not None]
+    random.seed(seed)
+    np.random.seed(seed)
 
-def count_transitions(seq: Union[List, str]) -> int:
-    """
-    Хөрш өөр элементүүдийн огтлолын тоог тоолно.
+    # Count how many containers are at each terminal
+    terminal_counts = Counter(containers["Терминал"])
+    container_indices_by_terminal = {
+        terminal: containers[containers["Терминал"] == terminal].index.tolist()
+        for terminal in terminal_counts
+    }
 
-    :param seq: Жагсаалт (List) эсвэл тэмдэгт мөр (str)
-    :return: Огтлолын тоо (int)
-    """
-    if isinstance(seq, str):
-        seq = seq.split(",")
+    # Build the sequence
+    sequence = []
+    terminals = list(terminal_counts.keys())
 
-    transitions = 0
-    for i in range(1, len(seq)):
-        if seq[i] != seq[i - 1]:
-            transitions += 1
-    return transitions
+    # Start with a randomly chosen terminal (weighted by count)
+    current_terminal = random.choices(
+        terminals,
+        weights=[terminal_counts[t] for t in terminals]
+    )[0]
+    
+    current_list = container_indices_by_terminal[current_terminal]
+    chosen = current_list.pop()
+    sequence.append(chosen)
+    terminal_counts[current_terminal] -= 1
+    if terminal_counts[current_terminal] == 0:
+        del terminal_counts[current_terminal]
+        del container_indices_by_terminal[current_terminal]
+
+    for _ in range(1, len(containers)):
+        if random.random() < prob_same_terminal and current_terminal in terminal_counts:
+            next_terminal = current_terminal
+        else:
+            available_terminals = list(terminal_counts.keys())
+            if not available_terminals:
+                break
+            weights = [terminal_counts[t] for t in available_terminals]
+            next_terminal = random.choices(available_terminals, weights=weights)[0]
+
+        current_terminal = next_terminal
+        next_list = container_indices_by_terminal[current_terminal]
+        chosen = next_list.pop()
+        sequence.append(chosen)
+        terminal_counts[current_terminal] -= 1
+        if terminal_counts[current_terminal] == 0:
+            del terminal_counts[current_terminal]
+            del container_indices_by_terminal[current_terminal]
+
+    return sequence
+
+
 
 def count_out(horoonii_too: int, huleelgiin_chingeleg: int = 0, huleelgiin_chingelegiin_time: int = 0, total_terminaluudiin_hureh_zai: int = 318) -> int:
     horoonii_zardal =horoonii_too = horoonii_too * 10 * 3500 # tsagt 210k minuted 3.5k
@@ -193,8 +255,12 @@ if __name__ == "__main__":
     # print(trains)
     # Save trains to csv
     # pd.DataFrame(trains).to_csv(simulation_data / "trains.csv", index=False)
-    # Load containers on trains
-    load_containers_to_trains(containers, trains, decision_random)
+    
+    # decision_function = decision_group_probalistic
+    # decision_function = decision_random
+    decision_function = decision_group_by_terminal
+
+    load_containers_to_trains(containers, trains, decision_function)
     print(trains)
     print('LENGTH=',NUMBER_OF_CONTAINERS)
     trains_terminal_sequences = [train_to_terminal_sequence(train) for train in trains]

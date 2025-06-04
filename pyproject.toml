@@ -2,17 +2,21 @@
 name = "train-track-sim-comparison"
 version = "0.1.0"
 description = "Train wagon delivery simulation and cost optimization tool."
-authors = ["Your Name <your.email@example.com>"]
+authors = [
+  { name = "MendeBadra" }
+]
 requires-python = ">=3.8"
-
-[tool.setuptools]
-packages = []
-
-[project.dependencies]
-pandas = ">=1.3.0"
-numpy = ">=1.21.0"
-openpyxl = ">=3.0.0"
+dependencies = [
+    "pandas>=1.3.0",
+    "numpy>=1.21.0",
+    "openpyxl>=3.0.0",
+]
 
 [build-system]
 requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta" 
+build-backend = "setuptools.build_meta"
+
+
+[tool.setuptools]
+# No packages or modules specified here
+py-modules = ["simulation"]  # ← Add this if your main script is called 
