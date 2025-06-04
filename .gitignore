@@ -1,3 +1,7 @@
 uv.lock
 build
 *.egg-info/
+~.
+
+
+**/~lock.*#

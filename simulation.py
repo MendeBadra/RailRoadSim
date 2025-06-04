@@ -22,20 +22,40 @@ MINUTES_PER_HOROO = 10 # 10 minutes to do one classification
 
 STATIONS = ['УБ', 'Ам', 'То'] # redundant
 
+# region here refers to бүс I, II
+# zuragnaas
+# TERMINALS = {
+#     'УБ МЧ': {'distance': 8, 'capacity': 18, 'station': 'УБ', 'region': 1},
+#     'Туушин': {'distance': 20, 'capacity': 8, 'station': 'УБ'},
+#     'Монгол экс': {'distance': 20, 'capacity': 13, 'station': 'УБ'},
+#     'материалын импекс': {'distance': 40, 'capacity': 39, 'station': 'УБ'},
+#     'Прогресс': {'distance': 60, 'capacity': 14, 'station': 'УБ'},
+#     'Эрин': {'distance': 60, 'capacity': 46, 'station': 'УБ'},
+#     'Техник импорт': {'distance': 40, 'capacity': 16, 'station': 'УБ'},
+#     'Амгалан': {'distance': 15, 'capacity': 37, 'station': 'Ам'},
+#     'Интердэс': {'distance': 20, 'capacity': 15, 'station': 'То'},
+#     'Монгол тр': {'distance': 10, 'capacity': 15, 'station': 'То'},
+#     'Толгойт М': {'distance': 5, 'capacity': 8, 'station': 'То'},
+#     'Номин Тр': {'distance': 20, 'capacity': 8, 'station': 'То'},
+# }
+
+# excelees Urtuunii salbar
 TERMINALS = {
-    'УБ МЧ': {'distance': 8, 'capacity': 18, 'station': 'УБ'},
-    'Туушин': {'distance': 20, 'capacity': 8, 'station': 'УБ'},
-    'Монгол экс': {'distance': 20, 'capacity': 13, 'station': 'УБ'},
-    'материалын импекс': {'distance': 40, 'capacity': 39, 'station': 'УБ'},
-    'Прогресс': {'distance': 60, 'capacity': 14, 'station': 'УБ'},
-    'Эрин': {'distance': 60, 'capacity': 46, 'station': 'УБ'},
-    'Техник импорт': {'distance': 40, 'capacity': 16, 'station': 'УБ'},
-    'Амгалан': {'distance': 15, 'capacity': 37, 'station': 'Ам'},
-    'Интердэс': {'distance': 20, 'capacity': 15, 'station': 'То'},
-    'Монгол тр': {'distance': 10, 'capacity': 15, 'station': 'То'},
-    'Толгойт М': {'distance': 5, 'capacity': 8, 'station': 'То'},
-    'Номин Тр': {'distance': 20, 'capacity': 8, 'station': 'То'},
+    'УБ МЧ': {'distance': 8, 'capacity': 33, 'station': 'УБ', 'region': 1},
+    'Туушин': {'distance': 20, 'capacity': 8, 'station': 'УБ', 'region': 1},
+    'Монгол экс': {'distance': 20, 'capacity': 13, 'station': 'УБ', 'region': 1},
+    'материалын импекс': {'distance': 40, 'capacity': 18, 'station': 'УБ', 'region': 2},
+    'Прогресс': {'distance': 60, 'capacity': 14, 'station': 'УБ', 'region': 1},
+    'Эрин': {'distance': 60, 'capacity': 26, 'station': 'УБ', 'region': 2},
+    'Техник импорт': {'distance': 40, 'capacity': 16, 'station': 'УБ', 'region': 2},
+    'Амгалан': {'distance': 15, 'capacity': 15, 'station': 'Ам', 'region': 1},
+    'Интердэсишн': {'distance': 20, 'capacity': 15, 'station': 'То', 'region': 1},
+    'Монгол транс': {'distance': 10, 'capacity': 15, 'station': 'То', 'region': 1},
+    'Толгойт МЧ': {'distance': 5, 'capacity': 8, 'station': 'То', 'region': 1},
+    'Номин Трэйдинг': {'distance': 20, 'capacity': 8, 'station': 'То', 'region': 2},
 }
+
+# TODO: Calimariin zardal
 
 
 TERMINALS_TO_NUMBER = {
@@ -216,6 +236,15 @@ def decision_group_probalistic(containers: pd.DataFrame,
     return sequence
 
 
+def decision_optimal(containers: pd.DataFrame) -> Sequence[int]:
+    """
+    Optimal decision
+    """
+    # Hardcoded optimal decision
+    order = [7, 1, 2, 4, 0, 3, 6, 5, 8, 9, 10, 11]
+    containers_sequence = 
+
+
 
 def train_to_terminal_sequence(train: List[dict]) -> List[int]:
     """
@@ -279,6 +308,16 @@ def step_():
     pass
 
 
+
+def calculate_classification_cost(train: List[dict]) -> float:
+    """
+    Calculate the cost of classifying a train.
+    """
+    pass
+
+def calculate_delivery_cost(train: List[dict]) -> float:
+    pass
+
 if __name__ == "__main__":
     simulation_data = Path("simulation_artifacts")
     input_dir = Path("input")
@@ -290,7 +329,7 @@ if __name__ == "__main__":
     )
     # For reproducing the results
     # containers.to_excel(simulation_data / "containers.xlsx", index=False)
-    containers = pd.read_excel(simulation_data / "containers.xlsx")
+    #   containers = pd.read_excel(simulation_data / "containers.xlsx")
     # Save containers to csv
     
     # print(containers)
@@ -301,15 +340,15 @@ if __name__ == "__main__":
     # Save trains to csv
     # pd.DataFrame(trains).to_csv(simulation_data / "trains.csv", index=False)
     
-    decision_function = lambda containers: decision_group_probalistic(containers,
-                                                                      prob_same_terminal=PROBABILITY,
-                                                                      seed=42)
-    # decision_function = decision_random
+    # decision_function = lambda containers: decision_group_probalistic(containers,
+    #                                                                   prob_same_terminal=PROBABILITY,
+    #                                                                   seed=42)
+    decision_function = decision_random
     # decision_function = decision_group_by_terminal
 
     load_containers_to_trains(containers, trains, decision_function)
     print(f"Trains: {[wagon['Терминал'] for wagon in trains[0]]}")
-    print('LENGTH=',NUMBER_OF_CONTAINERS)
+    print('LENGTH1=',len(trains[0]), "LENGTH2=",len(trains[1]))
     trains_terminal_sequences = [train_to_terminal_sequence(train) for train in trains]
     print(trains_terminal_sequences)
     # horoonii_too = count_transitions(trains_terminal_sequences)
