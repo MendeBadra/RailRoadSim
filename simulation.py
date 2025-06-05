@@ -2,8 +2,8 @@ import numpy as np
 import pandas as pd
 
 import random
-from collections import Counter
-from datetime import datetime, timedelta
+from collections import Counter, defaultdict
+# from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Union, List, Callable, Sequence
 
@@ -273,23 +273,44 @@ def decision_optimal(containers: List[dict]) -> Sequence[int]:
 
 
 
+
 def decision_fifo(decision_fn: Callable[[List[dict]], Sequence[int]]) -> Callable[[List[dict]], Sequence[int]]:
     """
-    Returns a wrapped decision function that applies the original decision function
-    after sorting containers in FIFO order (by 'Date').
+    Wrap a decision function to first sort containers by Date (ascending),
+    then apply the decision function **within each date**, but finally
+    mix terminals fairly in a FIFO-aware way.
     """
-    def wrapped(containers: List[dict]) -> Sequence[int]:
-        # Sort containers by date (FIFO order)
-        sorted_with_idx = sorted(enumerate(containers), key=lambda x: x[1]['Date'])
-        sorted_indices, sorted_containers = zip(*sorted_with_idx) if sorted_with_idx else ([], [])
+    def fifo_decision(containers: List[dict]) -> Sequence[int]:
+        # Group containers by date
+        date_to_containers = defaultdict(list)
+        for i, c in enumerate(containers):
+            date_to_containers[c["Date"]].append((i, c))
+        
+        # Sort dates
+        sorted_dates = sorted(date_to_containers.keys())
 
-        # Get order from original decision function
-        reordered_indices = decision_fn(list(sorted_containers))
+        final_order = []
+        seen_indices = set()
 
-        # Map reordered local indices back to original indices
-        return [sorted_indices[i] for i in reordered_indices]
-    
-    return wrapped
+        for date in sorted_dates:
+            group = date_to_containers[date]
+            if not group:
+                continue
+            
+            # Unpack original indices and containers
+            group_indices, group_containers = zip(*group)
+            group_indices = list(group_indices)
+            group_containers = list(group_containers)
+            
+            # Apply the wrapped decision function
+            sub_order = decision_fn(group_containers)
+            # Map back to original indices
+            final_order.extend([group_indices[i] for i in sub_order if group_indices[i] not in seen_indices])
+            seen_indices.update(group_indices)
+        
+        return final_order
+
+    return fifo_decision
 
 # LOAD THE CONTAINERS TO THE TRAIN
 def load_containers_to_trains(containers: List[dict],
