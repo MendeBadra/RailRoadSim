@@ -374,7 +374,7 @@ def calculate_penalty_cost(train_sequences: List[List[Dict]]) -> float:
             capacity = TERMINALS.get(terminal, {}).get("capacity", 1)
             if count > capacity:
                 excess = count - capacity
-                print(f"[Train {train_idx}] Terminal '{terminal}' exceeded by {excess} container(s).")
+                # print(f"[Train {train_idx}] Terminal '{terminal}' exceeded by {excess} container(s).")
                 # TODO: Make `calculate_wait_minutes` function
                 expected_minutes = calculate_wait_minutes()
                 total_penalty += excess * PENALTY_PER_MINUTE * expected_minutes
@@ -391,6 +391,13 @@ def calculate_penalty_cost(train_sequences: List[List[Dict]]) -> float:
 #     """
 #     pass
 ##################### HELPER FUNCTIONS #####################
+def load_container_data(containers_file_path: Union[str, Path]) -> List[dict]:
+    """Load container data from Excel file."""
+    print(f"Loading container data from {containers_file_path}")
+    containers_df = pd.read_excel(containers_file_path)
+    containers = containers_df.to_dict(orient="records")
+    print(f"Loaded {len(containers)} containers")
+    return containers
 
 def train_to_terminal_sequence(train: List[dict]) -> List[int]:
     """
@@ -398,7 +405,6 @@ def train_to_terminal_sequence(train: List[dict]) -> List[int]:
     Returns a list of ints representing the terminal sequence for the train.
     """
     return [TERMINALS_TO_NUMBER.get(wagon['Терминал'], -1) for wagon in train if wagon['Терминал'] is not None]
-
 
 def count_transitions(seq: Union[List, str]) -> int:
     """
@@ -419,6 +425,9 @@ def count_transitions(seq: Union[List, str]) -> int:
 def dataframe_to_list(df: pd.DataFrame):
     return df.to_dict(orient="records")
 
+def list_to_dataframe(results_list: List[dict]) -> pd.DataFrame:
+    """Convert a list of dictionaries to a pandas DataFrame."""
+    return pd.DataFrame(results_list)
 #################### END-HELPER FUNCTIONS ###################
 
 
@@ -457,6 +466,52 @@ def filter_containers_by_date(containers: List[dict], target_date: str) -> List[
         Filtered list of containers
     """
     return [c for c in containers if c['Date'] <= target_date]
+
+def print_simulation_summary(results_df: pd.DataFrame) -> None:
+    """Print a summary of simulation results."""
+    print("\n" + "="*50)
+    print("MONTHLY SIMULATION RESULTS")
+    print("="*50)
+    print(f"Total Classification Cost: {results_df['classification_cost'].sum():,.0f} MNT")
+    print(f"Total Penalty Cost: {results_df['penalty_cost'].sum():,.0f} MNT")
+    print(f"Total Cost: {results_df['total_cost'].sum():,.0f} MNT")
+    print(f"Total Containers Loaded: {results_df['containers_loaded'].sum():,}")
+    print(f"Average Daily Cost: {results_df['total_cost'].mean():,.0f} MNT")
+    print(f"Average Containers per Day: {results_df['containers_loaded'].mean():.1f}")
+    print(f"Days simulated: {len(results_df)}")
+
+# has got an error
+def save_simulation_results(results_df: pd.DataFrame, 
+                          start_date: str, 
+                          end_date: str,
+                          output_dir: Union[str, Path] = None) -> None:
+    """Save simulation results to files."""
+    if output_dir is None:
+        output_dir = Path("simulation_results")
+    else:
+        output_dir = Path(output_dir)
+    
+    output_dir.mkdir(exist_ok=True)
+    
+    # Save as CSV
+    csv_path = output_dir / f"simulation_results_{start_date}_to_{end_date}.csv"
+    results_df.to_csv(csv_path, index=False)
+    
+    # Save summary stats
+    summary_stats = {
+        'total_classification_cost': results_df['classification_cost'].sum(),
+        'total_penalty_cost': results_df['penalty_cost'].sum(),
+        'total_cost': results_df['total_cost'].sum(),
+        'total_containers_loaded': results_df['containers_loaded'].sum(),
+        'avg_daily_cost': results_df['total_cost'].mean(),
+        'avg_containers_per_day': results_df['containers_loaded'].mean()
+    }
+    
+    summary_path = output_dir / f"summary_{start_date}_to_{end_date}.json"
+    with open(summary_path, 'w') as f:
+        json.dump(summary_stats, f, indent=2)
+    
+    print(f"Results saved to {output_dir}")
 
 def run_daily_simulation(containers: List[dict], 
                         decision_function: Callable,
@@ -525,28 +580,17 @@ def run_monthly_simulation(containers_file_path: Union[str, Path],
                           end_date: str = "2025-06-30",
                           decision_function: Callable = None,
                           save_results: bool = True,
-                          output_dir: Union[str, Path] = None) -> Dict:
+                          output_dir: Union[str, Path] = None) -> pd.DataFrame:
     """
     Run simulation for a full month, day by day.
     
-    Args:
-        containers_file_path: Path to the Excel file containing monthly container data
-        start_date: Start date for simulation
-        end_date: End date for simulation
-        decision_function: Function to decide container loading order
-        save_results: Whether to save results to files
-        output_dir: Directory to save results
-    
     Returns:
-        Dictionary containing monthly simulation results
+        DataFrame with daily simulation results
     """
-    # Load monthly container data
-    print(f"Loading container data from {containers_file_path}")
-    containers_df = pd.read_excel(containers_file_path)
-    containers = containers_df.to_dict(orient="records")
-    print(f"Loaded {len(containers)} containers")
+    # Load data
+    containers = load_container_data(containers_file_path)
     
-    # Set default decision function if not provided
+    # Set default decision function
     if decision_function is None:
         def default_decision_function(containers):
             return decision_group_probalistic(containers, prob_same_terminal=PROBABILITY, seed=42)
@@ -556,18 +600,9 @@ def run_monthly_simulation(containers_file_path: Union[str, Path],
     dates = get_date_range(start_date, end_date)
     print(f"Simulating from {start_date} to {end_date} ({len(dates)} days)")
     
-    # Initialize results storage
-    daily_results = {}
-    monthly_summary = {
-        'total_classification_cost': 0,
-        'total_penalty_cost': 0,
-        'total_cost': 0,
-        'total_containers_loaded': 0,
-        'total_containers_available': 0,
-        'daily_breakdown': []
-    }
-    
     # Run simulation for each day
+    daily_results = []
+    
     for day_idx, date in enumerate(dates):
         print(f"Simulating day {day_idx + 1}/{len(dates)}: {date}")
         
@@ -577,17 +612,8 @@ def run_monthly_simulation(containers_file_path: Union[str, Path],
         # Run daily simulation
         daily_result = run_daily_simulation(available_containers, decision_function)
         
-        # Store results
-        daily_results[date] = daily_result
-        
-        # Update monthly summary
-        monthly_summary['total_classification_cost'] += daily_result['total_classification_cost']
-        monthly_summary['total_penalty_cost'] += daily_result['total_penalty_cost']
-        monthly_summary['total_cost'] += daily_result['total_cost']
-        monthly_summary['total_containers_loaded'] += daily_result['containers_loaded']
-        
-        # Add to daily breakdown
-        daily_breakdown = {
+        # Store results in a flat structure
+        result_row = {
             'date': date,
             'classification_cost': daily_result['total_classification_cost'],
             'penalty_cost': daily_result['total_penalty_cost'],
@@ -595,60 +621,21 @@ def run_monthly_simulation(containers_file_path: Union[str, Path],
             'containers_loaded': daily_result['containers_loaded'],
             'containers_available': daily_result['containers_available']
         }
-        monthly_summary['daily_breakdown'].append(daily_breakdown)
+        daily_results.append(result_row)
         
-        print(f"  Containers available: {daily_result['containers_available']}")
-        print(f"  Containers loaded: {daily_result['containers_loaded']}")
-        print(f"  Daily cost: {daily_result['total_cost']:,.0f} MNT")
+        print(f"  Available: {daily_result['containers_available']}, "
+              f"Loaded: {daily_result['containers_loaded']}, "
+              f"Cost: {daily_result['total_cost']:,.0f} MNT")
     
-    # Calculate averages
-    num_days = len(dates)
-    monthly_summary['avg_daily_classification_cost'] = monthly_summary['total_classification_cost'] / num_days
-    monthly_summary['avg_daily_penalty_cost'] = monthly_summary['total_penalty_cost'] / num_days
-    monthly_summary['avg_daily_total_cost'] = monthly_summary['total_cost'] / num_days
-    monthly_summary['avg_containers_loaded_per_day'] = monthly_summary['total_containers_loaded'] / num_days
+    # Convert to DataFrame
+    results_df = list_to_dataframe(daily_results)
     
     # Save results if requested
     if save_results:
-        if output_dir is None:
-            output_dir = Path("simulation_results")
-        else:
-            output_dir = Path(output_dir)
-        
-        output_dir.mkdir(exist_ok=True)
-        
-        # Save detailed daily results
-        with open(output_dir / f"daily_results_{start_date}_to_{end_date}.json", 'w') as f:
-            # Convert results to JSON-serializable format
-            json_results = {}
-            for date, result in daily_results.items():
-                json_results[date] = {
-                    'total_classification_cost': result['total_classification_cost'],
-                    'total_penalty_cost': result['total_penalty_cost'],
-                    'total_cost': result['total_cost'],
-                    'containers_loaded': result['containers_loaded'],
-                    'containers_available': result['containers_available'],
-                    'train_sequences': result['train_sequences']
-                }
-            json.dump(json_results, f, indent=2)
-        
-        # Save monthly summary
-        with open(output_dir / f"monthly_summary_{start_date}_to_{end_date}.json", 'w') as f:
-            json.dump(monthly_summary, f, indent=2)
-        
-        # Save daily breakdown as CSV
-        df_breakdown = pd.DataFrame(monthly_summary['daily_breakdown'])
-        df_breakdown.to_csv(output_dir / f"daily_breakdown_{start_date}_to_{end_date}.csv", index=False)
-        
-        print(f"Results saved to {output_dir}")
+        save_simulation_results(results_df, start_date, end_date, output_dir)
     
-    return {
-        'daily_results': daily_results,
-        'monthly_summary': monthly_summary
-    }
+    return results_df
 
-
-# main 
 def main():
     """Example of how to run the monthly simulation."""
     
@@ -667,40 +654,26 @@ def main():
     # decision_function = decision_fifo(decision_optimal)
     
     print("Starting monthly simulation...")
-    
+    output_dir = Path("simulation_results")
     # Run the simulation
-    results = run_monthly_simulation(
+    results_df = run_monthly_simulation(
         containers_file_path=containers_file,
         start_date="2025-06-01",
         end_date="2025-06-30",
         decision_function=decision_function,
-        save_results=True,
-        output_dir="simulation_results"
+        save_results=False,
+        output_dir=output_dir
     )
     
     # Print summary
-    summary = results['monthly_summary']
-    print("\n" + "="*50)
-    print("MONTHLY SIMULATION RESULTS")
-    print("="*50)
-    print(f"Total Classification Cost: {summary['total_classification_cost']:,.0f} MNT")
-    print(f"Total Penalty Cost: {summary['total_penalty_cost']:,.0f} MNT")
-    print(f"Total Cost: {summary['total_cost']:,.0f} MNT")
-    print(f"Total Containers Loaded: {summary['total_containers_loaded']:,}")
-    print(f"Average Daily Cost: {summary['avg_daily_total_cost']:,.0f} MNT")
-    print(f"Average Containers Loaded per Day: {summary['avg_containers_loaded_per_day']:.1f}")
-    
-    return results
+    print_simulation_summary(results_df)
+    print(f"Saved to {output_dir}")
+
+    return results_df.to_csv(output_dir / "results_df.csv")
 
 if __name__ == "__main__":
     # Run the simulation
-    results = main()
-
-
-
-
-
-
+    results_df = main()
 
 
 
