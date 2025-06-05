@@ -13,7 +13,6 @@ This repository provides a simulation and cost analysis tool for train wagon del
 
 ## Main Scripts
 - `simulation.py`: Core simulation logic for generating containers, forming trains, loading strategies, and cost analysis.
-- `train_track_sim_comparison.py`: Advanced analysis and comparison of real vs. optimized train formations using historical data.
 
 ## Data Files
 - `input/UBmagad.xlsx`: Terminal probability data for simulation.
