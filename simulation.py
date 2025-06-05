@@ -2,10 +2,11 @@ import numpy as np
 import pandas as pd
 
 import random
+import json
 from collections import Counter, defaultdict
-# from datetime import datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Union, List, Callable, Sequence
+from typing import Union, List, Callable, Sequence, Dict
 
 # Simulation parameters
 NUMBER_OF_CONTAINERS = 110
@@ -16,7 +17,7 @@ PROBABILITY = 0.6
 LOCOMOTIVE_COST_PER_HOUR = 210000 # MNT
 LOCOMOTIVE_COST_PER_MINUTE = LOCOMOTIVE_COST_PER_HOUR / 60  # 3500 MNT per minute
 
-PENALTY_PER_HOUR = 900
+PENALTY_PER_HOUR = 900 # Per container
 PENALTY_PER_MINUTE = PENALTY_PER_HOUR / 60 # 15 MNT per minute
 
 MINUTES_PER_HOROO = 10 # 10 minutes to do one classification
@@ -272,8 +273,7 @@ def decision_optimal(containers: List[dict]) -> Sequence[int]:
     return sequence
 
 
-
-
+# Wrapper to prioritize date over order
 def decision_fifo(decision_fn: Callable[[List[dict]], Sequence[int]]) -> Callable[[List[dict]], Sequence[int]]:
     """
     Wrap a decision function to first sort containers by Date (ascending),
@@ -344,6 +344,54 @@ def load_containers_to_trains(containers: List[dict],
 
 ############################# - END-DECISION ##########################################
 
+########################### CALCULATE-COST-FUNCTIONS ########################
+def calculate_classification_cost(horoonii_too: int) -> int:
+    """Here I mean classification as shunting cost or Huruudultiin zardal"""
+    #  huleelgiin_chingeleg: int = 0, huleelgiin_chingelegiin_time: int = 0, total_terminaluudiin_hureh_zai: int = 318
+    horoonii_zardal =horoonii_too = horoonii_too * MINUTES_PER_HOROO * LOCOMOTIVE_COST_PER_MINUTE # tsagt 210k minuted 3.5k
+    # huleelgiin_zardal = huleelgiin_chingeleg * huleelgiin_chingelegiin_time * PENALTY_PER_MINUTE # minutaar
+    # terminal_hurgeh_zardal = total_terminaluudiin_hureh_zai * LOCOMOTIVE_COST_PER_MINUTE
+    # niit_zardal = horoonii_zardal + huleelgiin_zardal + terminal_hurgeh_zardal
+    return horoonii_zardal
+
+def calculate_wait_minutes():
+    # TODO: Implement wait_minutes
+    return 60
+
+ ###################### END-CALCULATE ##########################3
+
+def calculate_penalty_cost(train_sequences: List[List[Dict]]) -> float:
+    """Calculate total penalty cost for containers exceeding terminal capacity."""
+    total_penalty = 0
+
+    for train_idx, train in enumerate(train_sequences):
+        terminal_counts = {}
+        for container in train:
+            terminal = container['Терминал']
+            terminal_counts[terminal] = terminal_counts.get(terminal, 0) + 1
+
+        for terminal, count in terminal_counts.items():
+            capacity = TERMINALS.get(terminal, {}).get("capacity", 1)
+            if count > capacity:
+                excess = count - capacity
+                print(f"[Train {train_idx}] Terminal '{terminal}' exceeded by {excess} container(s).")
+                # TODO: Make `calculate_wait_minutes` function
+                expected_minutes = calculate_wait_minutes()
+                total_penalty += excess * PENALTY_PER_MINUTE * expected_minutes
+
+    return total_penalty
+
+
+# def load_containers_to_trains_(containers: pd.DataFrame,
+#                               trains: List[List[dict]],
+#                               decision_function: Callable) -> None:
+#     """
+#     Loads containers onto trains in-place. Each train is filled up to its capacity,
+#     and loaded containers are removed from the available pool for subsequent trains.
+#     """
+#     pass
+##################### HELPER FUNCTIONS #####################
+
 def train_to_terminal_sequence(train: List[dict]) -> List[int]:
     """
     Transform a train (list of dicts with 'Терминал') into a sequence of ints using TERMINALS_TO_NUMBER.
@@ -368,95 +416,343 @@ def count_transitions(seq: Union[List, str]) -> int:
             transitions += 1
     return transitions
 
-def calculate_classification_cost(horoonii_too: int) -> int:
-
-    #  huleelgiin_chingeleg: int = 0, huleelgiin_chingelegiin_time: int = 0, total_terminaluudiin_hureh_zai: int = 318
-    horoonii_zardal =horoonii_too = horoonii_too * MINUTES_PER_HOROO * LOCOMOTIVE_COST_PER_MINUTE # tsagt 210k minuted 3.5k
-    # huleelgiin_zardal = huleelgiin_chingeleg * huleelgiin_chingelegiin_time * PENALTY_PER_MINUTE # minutaar
-    # terminal_hurgeh_zardal = total_terminaluudiin_hureh_zai * LOCOMOTIVE_COST_PER_MINUTE
-    # niit_zardal = horoonii_zardal + huleelgiin_zardal + terminal_hurgeh_zardal
-    return horoonii_zardal
-
-
-
-# def load_containers_to_trains_(containers: pd.DataFrame,
-#                               trains: List[List[dict]],
-#                               decision_function: Callable) -> None:
-#     """
-#     Loads containers onto trains in-place. Each train is filled up to its capacity,
-#     and loaded containers are removed from the available pool for subsequent trains.
-#     """
-#     pass
-##################### HELPER FUNCTIONS #####################
-
-def calculate_penalty_cost(train_sequences: List[int]) -> float:
-    unique_terminals = []
-    for train_sequence in train_sequences:
-        unique_terminals.extend(set(train_sequence))
-    
-    terminal_counts = {terminal: 0 for terminal in unique_terminals}
-    for terminal in train_sequence:
-        terminal_counts[terminal] += 1
-    for terminal, count in terminal_counts.items():
-        if count > 1:
-            print(f"Terminal {terminal} appears {count} times")
-    # TODO: For
-    
 def dataframe_to_list(df: pd.DataFrame):
     return df.to_dict(orient="records")
 
 #################### END-HELPER FUNCTIONS ###################
 
-def step_():
-    pass
 
-if __name__ == "__main__":
-    simulation_data = Path("simulation_artifacts")
-    input_dir = Path("input")
-    probability_excel_path = input_dir / "UBmagad.xlsx"
-
-    date="2025-06-01"
-    # containers = generate_containers(
-    #     probability_excel_path,
-    #     number_of_containers=NUMBER_OF_CONTAINERS,
-    #     date=date
-    # )
-    # For reproducing the results
-    # containers.to_excel(simulation_data / f"containers_{date}.xlsx", index=False)
-    containers = pd.read_excel(simulation_data / f"containers_{date}.xlsx")
-    containers = dataframe_to_list(containers)
-    # Save containers to csv
+################### SIMULATION FUNCTIONS ####################
+def get_date_range(start_date: str, end_date: str) -> List[str]:
+    """
+    Generate a list of dates between start_date and end_date (inclusive).
     
-    # print(containers)
+    Args:
+        start_date: Start date in 'YYYY-MM-DD' format
+        end_date: End date in 'YYYY-MM-DD' format
+    
+    Returns:
+        List of date strings in 'YYYY-MM-DD' format
+    """
+    start = datetime.strptime(start_date, '%Y-%m-%d')
+    end = datetime.strptime(end_date, '%Y-%m-%d')
+    
+    dates = []
+    current = start
+    while current <= end:
+        dates.append(current.strftime('%Y-%m-%d'))
+        current += timedelta(days=1)
+    
+    return dates
+
+def filter_containers_by_date(containers: List[dict], target_date: str) -> List[dict]:
+    """
+    Filter containers that arrived on or before the target date.
+    
+    Args:
+        containers: List of container dictionaries
+        target_date: Target date in 'YYYY-MM-DD' format
+    
+    Returns:
+        Filtered list of containers
+    """
+    return [c for c in containers if c['Date'] <= target_date]
+
+def run_daily_simulation(containers: List[dict], 
+                        decision_function: Callable,
+                        number_of_trains: int = NUMBER_OF_TRAINS,
+                        number_of_wagons: int = NUMBER_OF_WAGONS) -> Dict:
+    """
+    Run simulation for a single day with given containers.
+    
+    Args:
+        containers: List of available containers
+        decision_function: Function to decide container loading order
+        number_of_trains: Number of trains to generate
+        number_of_wagons: Number of wagons per train
+    
+    Returns:
+        Dictionary containing simulation results
+    """
+    if not containers:
+        return {
+            'trains': [],
+            'total_classification_cost': 0,
+            'total_penalty_cost': 0,
+            'total_cost': 0,
+            'containers_loaded': 0,
+            'containers_available': 0,
+            'train_sequences': []
+        }
+    
     # Generate trains
-    trains = generate_trains(number_of_trains=NUMBER_OF_TRAINS,
-                             number_of_wagons=NUMBER_OF_WAGONS)
-    # print(trains)
-    # Save trains to csv
-    # pd.DataFrame(trains).to_csv(simulation_data / "trains.csv", index=False)
+    trains = generate_trains(number_of_trains=number_of_trains,
+                           number_of_wagons=number_of_wagons)
     
+    # Load containers to trains
+    trains = load_containers_to_trains(containers, trains, decision_function)
+    
+    # Calculate costs
+    total_classification_cost = 0
+    train_sequences = []
+    
+    for train in trains:
+        train_terminal_sequence = train_to_terminal_sequence(train)
+        train_sequences.append(train_terminal_sequence)
+        
+        horoonii_too = count_transitions(train_terminal_sequence)
+        classification_cost = calculate_classification_cost(horoonii_too=horoonii_too)
+        total_classification_cost += classification_cost
+    
+    # Calculate penalty cost
+    total_penalty_cost = calculate_penalty_cost(trains)
+    
+    # Count loaded containers
+    containers_loaded = sum(1 for train in trains for wagon in train if wagon['container_id'] is not None)
+    
+    return {
+        'trains': trains,
+        'total_classification_cost': total_classification_cost,
+        'total_penalty_cost': total_penalty_cost,
+        'total_cost': total_classification_cost + total_penalty_cost,
+        'containers_loaded': containers_loaded,
+        'containers_available': len(containers),
+        'train_sequences': train_sequences
+    }
+
+def run_monthly_simulation(containers_file_path: Union[str, Path],
+                          start_date: str = "2025-06-01",
+                          end_date: str = "2025-06-30",
+                          decision_function: Callable = None,
+                          save_results: bool = True,
+                          output_dir: Union[str, Path] = None) -> Dict:
+    """
+    Run simulation for a full month, day by day.
+    
+    Args:
+        containers_file_path: Path to the Excel file containing monthly container data
+        start_date: Start date for simulation
+        end_date: End date for simulation
+        decision_function: Function to decide container loading order
+        save_results: Whether to save results to files
+        output_dir: Directory to save results
+    
+    Returns:
+        Dictionary containing monthly simulation results
+    """
+    # Load monthly container data
+    print(f"Loading container data from {containers_file_path}")
+    containers_df = pd.read_excel(containers_file_path)
+    containers = containers_df.to_dict(orient="records")
+    print(f"Loaded {len(containers)} containers")
+    
+    # Set default decision function if not provided
+    if decision_function is None:
+        def default_decision_function(containers):
+            return decision_group_probalistic(containers, prob_same_terminal=PROBABILITY, seed=42)
+        decision_function = default_decision_function
+    
+    # Get date range
+    dates = get_date_range(start_date, end_date)
+    print(f"Simulating from {start_date} to {end_date} ({len(dates)} days)")
+    
+    # Initialize results storage
+    daily_results = {}
+    monthly_summary = {
+        'total_classification_cost': 0,
+        'total_penalty_cost': 0,
+        'total_cost': 0,
+        'total_containers_loaded': 0,
+        'total_containers_available': 0,
+        'daily_breakdown': []
+    }
+    
+    # Run simulation for each day
+    for day_idx, date in enumerate(dates):
+        print(f"Simulating day {day_idx + 1}/{len(dates)}: {date}")
+        
+        # Get containers available up to this date
+        available_containers = filter_containers_by_date(containers, date)
+        
+        # Run daily simulation
+        daily_result = run_daily_simulation(available_containers, decision_function)
+        
+        # Store results
+        daily_results[date] = daily_result
+        
+        # Update monthly summary
+        monthly_summary['total_classification_cost'] += daily_result['total_classification_cost']
+        monthly_summary['total_penalty_cost'] += daily_result['total_penalty_cost']
+        monthly_summary['total_cost'] += daily_result['total_cost']
+        monthly_summary['total_containers_loaded'] += daily_result['containers_loaded']
+        
+        # Add to daily breakdown
+        daily_breakdown = {
+            'date': date,
+            'classification_cost': daily_result['total_classification_cost'],
+            'penalty_cost': daily_result['total_penalty_cost'],
+            'total_cost': daily_result['total_cost'],
+            'containers_loaded': daily_result['containers_loaded'],
+            'containers_available': daily_result['containers_available']
+        }
+        monthly_summary['daily_breakdown'].append(daily_breakdown)
+        
+        print(f"  Containers available: {daily_result['containers_available']}")
+        print(f"  Containers loaded: {daily_result['containers_loaded']}")
+        print(f"  Daily cost: {daily_result['total_cost']:,.0f} MNT")
+    
+    # Calculate averages
+    num_days = len(dates)
+    monthly_summary['avg_daily_classification_cost'] = monthly_summary['total_classification_cost'] / num_days
+    monthly_summary['avg_daily_penalty_cost'] = monthly_summary['total_penalty_cost'] / num_days
+    monthly_summary['avg_daily_total_cost'] = monthly_summary['total_cost'] / num_days
+    monthly_summary['avg_containers_loaded_per_day'] = monthly_summary['total_containers_loaded'] / num_days
+    
+    # Save results if requested
+    if save_results:
+        if output_dir is None:
+            output_dir = Path("simulation_results")
+        else:
+            output_dir = Path(output_dir)
+        
+        output_dir.mkdir(exist_ok=True)
+        
+        # Save detailed daily results
+        with open(output_dir / f"daily_results_{start_date}_to_{end_date}.json", 'w') as f:
+            # Convert results to JSON-serializable format
+            json_results = {}
+            for date, result in daily_results.items():
+                json_results[date] = {
+                    'total_classification_cost': result['total_classification_cost'],
+                    'total_penalty_cost': result['total_penalty_cost'],
+                    'total_cost': result['total_cost'],
+                    'containers_loaded': result['containers_loaded'],
+                    'containers_available': result['containers_available'],
+                    'train_sequences': result['train_sequences']
+                }
+            json.dump(json_results, f, indent=2)
+        
+        # Save monthly summary
+        with open(output_dir / f"monthly_summary_{start_date}_to_{end_date}.json", 'w') as f:
+            json.dump(monthly_summary, f, indent=2)
+        
+        # Save daily breakdown as CSV
+        df_breakdown = pd.DataFrame(monthly_summary['daily_breakdown'])
+        df_breakdown.to_csv(output_dir / f"daily_breakdown_{start_date}_to_{end_date}.csv", index=False)
+        
+        print(f"Results saved to {output_dir}")
+    
+    return {
+        'daily_results': daily_results,
+        'monthly_summary': monthly_summary
+    }
+
+
+# main 
+def main():
+    """Example of how to run the monthly simulation."""
+    
+    # Set up paths
+    simulation_data_dir = Path("simulation_artifacts")
+    containers_file = simulation_data_dir / "june_2025_containters_extended_smoothed.xlsx"
+    
+    # Define decision function
     def decision_function(containers):
         return decision_group_probalistic(containers, prob_same_terminal=PROBABILITY, seed=42)
+    
+    # Alternative decision functions you can use:
     # decision_function = decision_random
     # decision_function = decision_group_by_terminal
     # decision_function = decision_optimal
+    # decision_function = decision_fifo(decision_optimal)
+    
+    print("Starting monthly simulation...")
+    
+    # Run the simulation
+    results = run_monthly_simulation(
+        containers_file_path=containers_file,
+        start_date="2025-06-01",
+        end_date="2025-06-30",
+        decision_function=decision_function,
+        save_results=True,
+        output_dir="simulation_results"
+    )
+    
+    # Print summary
+    summary = results['monthly_summary']
+    print("\n" + "="*50)
+    print("MONTHLY SIMULATION RESULTS")
+    print("="*50)
+    print(f"Total Classification Cost: {summary['total_classification_cost']:,.0f} MNT")
+    print(f"Total Penalty Cost: {summary['total_penalty_cost']:,.0f} MNT")
+    print(f"Total Cost: {summary['total_cost']:,.0f} MNT")
+    print(f"Total Containers Loaded: {summary['total_containers_loaded']:,}")
+    print(f"Average Daily Cost: {summary['avg_daily_total_cost']:,.0f} MNT")
+    print(f"Average Containers Loaded per Day: {summary['avg_containers_loaded_per_day']:.1f}")
+    
+    return results
 
-    trains = load_containers_to_trains(containers, trains, decision_function)
-    print(f"Trains: {[wagon['Терминал'] for wagon in trains[0]]}")
-    print('LENGTH1=',len(trains[0]), "LENGTH2=",len(trains[1]))
-    trains_terminal_sequences = [train_to_terminal_sequence(train) for train in trains]
-    print(trains_terminal_sequences)
-    calculate_penalty_cost(trains_terminal_sequences)
-    # horoonii_too = count_transitions(trains_terminal_sequences)
-    # print('HOROODOLT',horoonii_too)
-    expense_sum = 0.0
-    for train_terminal_sequence in trains_terminal_sequences:
-        horoonii_too = count_transitions(train_terminal_sequence)
-        # horoonii_too_dict[train_terminal_sequence] = horoonii_too
-        classification_cost = calculate_classification_cost(horoonii_too=horoonii_too)
-        print(f"Huruunii zardal: {classification_cost}")
-        expense_sum += classification_cost
-        print('HOROODOLT',horoonii_too)
+if __name__ == "__main__":
+    # Run the simulation
+    results = main()
 
-    print('expense_sum',expense_sum)
+
+
+
+
+
+
+
+
+# if __name__ == "__main__":
+#     simulation_data_dir = Path("simulation_artifacts")
+#     input_dir = Path("input")
+#     probability_excel_path = input_dir / "UBmagad.xlsx"
+
+#     date="2025-06-01"
+#     # containers = generate_containers(
+#     #     probability_excel_path,
+#     #     number_of_containers=NUMBER_OF_CONTAINERS,
+#     #     date=date
+#     # )
+#     # For reproducing the results
+#     # containers.to_excel(simulation_data / f"containers_{date}.xlsx", index=False)
+#     #containers = pd.read_excel(simulation_data_dir / f"containers_{date}.xlsx")
+#     #containers = dataframe_to_list(containers)
+#     containers = pd.read_excel( simulation_data_dir / "june_2025_containters_extended_smoothed.xlsx", index=False)
+#     containers = dataframe_to_list(containers)
+#     # Save containers to csv
+    
+#     # print(containers)
+#     # Generate trains
+#     trains = generate_trains(number_of_trains=NUMBER_OF_TRAINS,
+#                              number_of_wagons=NUMBER_OF_WAGONS)
+#     # print(trains)
+#     # Save trains to csv
+#     # pd.DataFrame(trains).to_csv(simulation_data / "trains.csv", index=False)
+    
+#     def decision_function(containers):
+#         return decision_group_probalistic(containers, prob_same_terminal=PROBABILITY, seed=42)
+#     # decision_function = decision_random
+#     # decision_function = decision_group_by_terminal
+#     # decision_function = decision_optimal
+
+#     trains = load_containers_to_trains(containers, trains, decision_function)
+#     print(f"Trains: {[wagon['Терминал'] for wagon in trains[0]]}")
+#     print('LENGTH1=',len(trains[0]), "LENGTH2=",len(trains[1]))
+#     trains_terminal_sequences = [train_to_terminal_sequence(train) for train in trains]
+#     print(trains_terminal_sequences)
+#     calculate_penalty_cost(trains_terminal_sequences)
+#     # horoonii_too = count_transitions(trains_terminal_sequences)
+#     # print('HOROODOLT',horoonii_too)
+#     expense_sum = 0.0
+#     for train_terminal_sequence in trains_terminal_sequences:
+#         horoonii_too = count_transitions(train_terminal_sequence)
+#         # horoonii_too_dict[train_terminal_sequence] = horoonii_too
+#         classification_cost = calculate_classification_cost(horoonii_too=horoonii_too)
+#         print(f"Huruunii zardal: {classification_cost}")
+#         expense_sum += classification_cost
+#         print('HOROODOLT',horoonii_too)
+
+#     print('expense_sum',expense_sum)
 
