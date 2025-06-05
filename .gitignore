@@ -1,7 +1,56 @@
-uv.lock
-build
+# Python bytecode and cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Distribution / packaging
+build/
+dist/
 *.egg-info/
+.eggs/
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+env/
+venv/
+ENV/
+.venv/
+.env/
+
+# Lock files
+uv.lock
+poetry.lock
+Pipfile.lock
+
+# Editor and OS files
+*~
+.~*
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
+desktop.ini
+
+# VSCode settings
+.vscode/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Backup files
+*.bak
+*.tmp
+*.orig
+*.old
+
+# Misc
 ~.
-
-
 **~lock.*#

@@ -126,7 +126,7 @@ def generate_train(
           ) -> List[dict]:
     """Generate trains, which is an empty container for wagons where each wagon has a container."""
     empty_container = [
-        {'container_id': None, 'Терминал': None}
+        {'container_id': None, 'Терминал': None, 'Date': None}
         for _ in range(number_of_wagons)
     ]
     return empty_container
@@ -273,6 +273,53 @@ def decision_optimal(containers: List[dict]) -> Sequence[int]:
 
 
 
+def decision_fifo(decision_fn: Callable[[List[dict]], Sequence[int]]) -> Callable[[List[dict]], Sequence[int]]:
+    """
+    Returns a wrapped decision function that applies the original decision function
+    after sorting containers in FIFO order (by 'Date').
+    """
+    def wrapped(containers: List[dict]) -> Sequence[int]:
+        # Sort containers by date (FIFO order)
+        sorted_with_idx = sorted(enumerate(containers), key=lambda x: x[1]['Date'])
+        sorted_indices, sorted_containers = zip(*sorted_with_idx) if sorted_with_idx else ([], [])
+
+        # Get order from original decision function
+        reordered_indices = decision_fn(list(sorted_containers))
+
+        # Map reordered local indices back to original indices
+        return [sorted_indices[i] for i in reordered_indices]
+    
+    return wrapped
+
+# LOAD THE CONTAINERS TO THE TRAIN
+def load_containers_to_trains(containers: List[dict],
+                               trains: List[List[dict]], 
+                               decision_function: Callable) -> List[List[dict]]:
+    """
+    Loads containers onto trains in-place. Each train is filled up to its capacity,
+    and loaded containers are removed from the available pool for subsequent trains.
+    
+    Returns the updated trains list for convenience.
+    """
+    available_indices = set(range(len(containers)))
+    for train in trains:
+        # Build a list of available containers (list of dicts)
+        available_containers = [containers[i] for i in available_indices]
+        # Map local indices in available_containers to original indices in containers
+        idx_map = {i: orig_idx for i, orig_idx in enumerate(available_indices)}
+        # Get the order in which to load containers
+        ordered_indices = decision_function(available_containers)
+        # Select indices for this train (up to train capacity)
+        selected_indices = [idx_map[i] for i in ordered_indices[:len(train)]]
+        for i, idx in enumerate(selected_indices):
+            train[i]['container_id'] = containers[idx]['container_id']
+            train[i]['Терминал'] = containers[idx]['Терминал']
+            train[i]['Date'] = containers[idx]['Date']
+        available_indices -= set(selected_indices)
+        if not available_indices:
+            break
+    return trains
+
 
 ############################# - END-DECISION ##########################################
 
@@ -310,32 +357,6 @@ def calculate_classification_cost(horoonii_too: int) -> int:
     return horoonii_zardal
 
 
-def load_containers_to_trains(containers: List[dict],
-                               trains: List[List[dict]], 
-                               decision_function: Callable) -> List[List[dict]]:
-    """
-    Loads containers onto trains in-place. Each train is filled up to its capacity,
-    and loaded containers are removed from the available pool for subsequent trains.
-    
-    Returns the updated trains list for convenience.
-    """
-    available_indices = set(range(len(containers)))
-    for train in trains:
-        # Build a list of available containers (list of dicts)
-        available_containers = [containers[i] for i in available_indices]
-        # Map local indices in available_containers to original indices in containers
-        idx_map = {i: orig_idx for i, orig_idx in enumerate(available_indices)}
-        # Get the order in which to load containers
-        ordered_indices = decision_function(available_containers)
-        # Select indices for this train (up to train capacity)
-        selected_indices = [idx_map[i] for i in ordered_indices[:len(train)]]
-        for i, idx in enumerate(selected_indices):
-            train[i]['container_id'] = containers[idx]['container_id']
-            train[i]['Терминал'] = containers[idx]['Терминал']
-        available_indices -= set(selected_indices)
-        if not available_indices:
-            break
-    return trains
 
 # def load_containers_to_trains_(containers: pd.DataFrame,
 #                               trains: List[List[dict]],
@@ -345,17 +366,7 @@ def load_containers_to_trains(containers: List[dict],
 #     and loaded containers are removed from the available pool for subsequent trains.
 #     """
 #     pass
-    
-    
-
-
-
-
-
-def step_():
-    pass
-
-
+##################### HELPER FUNCTIONS #####################
 
 def calculate_penalty_cost(train_sequences: List[int]) -> float:
     unique_terminals = []
@@ -373,7 +384,10 @@ def calculate_penalty_cost(train_sequences: List[int]) -> float:
 def dataframe_to_list(df: pd.DataFrame):
     return df.to_dict(orient="records")
 
-    
+#################### END-HELPER FUNCTIONS ###################
+
+def step_():
+    pass
 
 if __name__ == "__main__":
     simulation_data = Path("simulation_artifacts")
@@ -425,54 +439,3 @@ if __name__ == "__main__":
 
     print('expense_sum',expense_sum)
 
-
-
-def linear_increase(start: int, end: int, steps: int):
-    """Returns a list of integers linearly increasing from start to end inclusive."""
-    return [round(start + i * (end - start) / (steps - 1)) for i in range(steps)]
-
-
-
-# GENERATING the synthetic data 
-if __name__ != "__main__":
-    simulation_data = Path("simulation_artifacts")
-    input_dir = Path("input")
-    probability_excel_path = input_dir / "UBmagad.xlsx"
-    start_date = datetime(2025, 6, 1)
-    end_date = datetime(2025, 6, 30)
-    all_data = []
-
-    # === Generate from May 24 to June 1 (ramping up)
-    ramp_start_date = datetime(2025, 5, 24)
-    ramp_end_date = datetime(2025, 6, 1)
-    ramp_days = (ramp_end_date - ramp_start_date).days + 1
-
-    # Simulate containers from small number (e.g. 10) up to NUMBER_OF_CONTAINERS
-    ramp_numbers = linear_increase(10, NUMBER_OF_CONTAINERS, ramp_days)
-
-    all_data = []
-
-    for i in range(ramp_days):
-        current_date = ramp_start_date + timedelta(days=i)
-        date_str = current_date.strftime("%Y-%m-%d")
-
-        containers_df = generate_containers(
-            probability_excel_path,
-            number_of_containers=ramp_numbers[i],
-            date=date_str
-        )
-        all_data.append(containers_df)
-
-    for i in range((end_date - start_date).days + 1):
-        current_date = start_date + timedelta(days=i)
-        date_str = current_date.strftime("%Y-%m-%d")
-    
-        containers_df = generate_containers(
-            probability_excel_path,
-            number_of_containers=NUMBER_OF_CONTAINERS,
-            date=date_str
-        )
-        all_data.append(containers_df)
-    monthly_df = pd.concat(all_data, ignore_index=True)
-    monthly_df.to_excel(simulation_data / "june_2025_containters_extended_smoothed.xlsx", index=False)
-    print(monthly_df)
