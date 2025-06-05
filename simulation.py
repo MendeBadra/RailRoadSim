@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 NUMBER_OF_CONTAINERS = 110
 NUMBER_OF_TRAINS = 2
 NUMBER_OF_WAGONS = 55
-PROBABILITY = 0.6
+PROBABILITY = 0.7
 
 LOCOMOTIVE_COST_PER_HOUR = 210000 # MNT
 LOCOMOTIVE_COST_PER_MINUTE = LOCOMOTIVE_COST_PER_HOUR / 60  # 3500 MNT per minute
@@ -350,11 +350,44 @@ def calculate_classification_cost(horoonii_too: int) -> int:
     # niit_zardal = horoonii_zardal + huleelgiin_zardal + terminal_hurgeh_zardal
     return horoonii_zardal
 
+# def calculate_wait_minutes(number_of_cargoes_exceeded_capacity: int, data: pd.DataFrame):
+#     # TODO: Implement wait_minutes
+#     # the Naive way 11 minutes + number of cargoes * 5
+#     return 11 + number_of_cargoes_exceeded_capacity * 5 # + error
+# df = pd.read_excel(r"C:\Users\Dell\Downloads\Data_main.xlsx")  
+# data = df.iloc[1:433,5].tolist()
+ 
+#random selection
+# def calculate_wait_minutes(number_of_cargoes_exceeded_capacity: int, data: pd.DataFrame):
+#     min_error = np.min(data)
+#     max_error = np.max(data)
+#     error = np.random.uniform(min_error, max_error)
+ 
+#     return 11 + number_of_cargoes_exceeded_capacity * 5  + error
+ 
+#with bootstrap confidence interval
 def calculate_wait_minutes(number_of_cargoes_exceeded_capacity: int, data: pd.DataFrame):
-    # TODO: Implement wait_minutes
-    # the Naive way 11 minutes + number of cargoes * 5
-    return 11 + number_of_cargoes_exceeded_capacity * 5 # + error
-
+    min_error, max_error = bootstrap(data)
+    error = np.random.uniform(min_error, max_error)
+ 
+    return 11 + number_of_cargoes_exceeded_capacity * 5  + error
+ 
+def bootstrap(data) :
+    original_data = np.array(data)
+    bootstrap_means = []
+ 
+    for _ in range(1000):
+        sample = np.random.choice(original_data, size=len(original_data), replace=True)
+        sample_mean = np.mean(sample)
+        bootstrap_means.append(sample_mean)
+ 
+    lower = np.percentile(bootstrap_means, 2.5)
+    upper = np.percentile(bootstrap_means, 97.5)
+    # print(f"Bootstrap mean: {np.mean(bootstrap_means):.2f}")
+    # print(f"95% Confidence Interval: ({lower:.2f}, {upper:.2f})")
+    return lower, upper
+ 
+ 
 
  ###################### END-CALCULATE ##########################3
 
@@ -366,14 +399,17 @@ def calculate_penalty_cost(trains: List[List[Dict]]) -> float:
         for container in train:
             terminal = container['Терминал']
             terminal_counts[terminal] = terminal_counts.get(terminal, 0) + 1
-    print("Terminal COUNTS \n", terminal_counts)
+    # print("Terminal COUNTS \n", terminal_counts)
+
+    penalty_df = pd.read_excel("input/Data_main.xlsx")
+    penalty_df = penalty_df.iloc[1:433,5].tolist()
 
     for terminal, count in terminal_counts.items():
         capacity = TERMINALS.get(terminal, {}).get("capacity", 1)
         if count > capacity:
             excess = count - capacity
             # print(f"[Train {train_idx}] Terminal '{terminal}' exceeded by {excess} container(s).")
-            expected_minutes = calculate_wait_minutes(capacity)
+            expected_minutes = calculate_wait_minutes(capacity, penalty_df)
             total_penalty += excess * PENALTY_PER_MINUTE * expected_minutes
 
     return total_penalty
@@ -625,6 +661,8 @@ def run_monthly_simulation(containers_file_path: Union[str, Path],
     # Load data
     containers = load_container_data(containers_file_path)
     
+    print(f"Total containers in input: {len(containers)}")
+    print(f"First 10 container dates: {[c['Date'] for c in containers[:10]]}")
     # Set default decision function
     if decision_function is None:
         def default_decision_function(containers):
@@ -639,6 +677,7 @@ def run_monthly_simulation(containers_file_path: Union[str, Path],
     daily_results = []
     train_sequences_by_day = {}
     loaded_ids = set()
+    # main simulation loop
     for day_idx, date in enumerate(dates):
         print(f"Simulating day {day_idx + 1}/{len(dates)}: {date}")
         
@@ -646,7 +685,7 @@ def run_monthly_simulation(containers_file_path: Union[str, Path],
         # available_containers = filter_containers_by_date(containers, date)
         available_containers = [c for c in containers if c['Date'] <= date and c['container_id'] not in loaded_ids]
 
-        
+        print(f"Day {date}: available_containers={len(available_containers)}, loaded_ids={len(loaded_ids)}")
         # Run daily simulation
         daily_result = run_daily_simulation(available_containers, decision_function)
         # train_sequences_by_day[date] = daily_result['train_sequences'] 
@@ -672,14 +711,16 @@ def run_monthly_simulation(containers_file_path: Union[str, Path],
             'delivery_cost': daily_result['total_delivery_cost'],
             'total_cost': daily_result['total_cost'],
             'containers_loaded': daily_result['containers_loaded'],
-            'containers_available': daily_result['containers_available']
+            # 'containers_available': daily_result['containers_available']
+            'containers_available': len([c for c in containers if c['container_id'] not in loaded_ids])
         }
         daily_results.append(result_row)
         
         print(f"  Available: {daily_result['containers_available']}, "
               f"Loaded: {daily_result['containers_loaded']}, "
               f"Cost: {daily_result['total_cost']:,.0f} MNT")
-    
+    # DEBUG
+    print(f"Day {date}: available_containers={len(available_containers)}, loaded_ids={len(loaded_ids)}")
     # Convert to DataFrame
     results_df = list_to_dataframe(daily_results)
     
@@ -702,9 +743,9 @@ def main():
     
     # decision_function = decision_fifo(lambda c: decision_group_probalistic(c, prob_same_terminal=PROBABILITY, seed=42))
     # Alternative decision functions you can use:
-    decision_function = decision_fifo(decision_random)
+    # decision_function = decision_fifo(decision_random)
     # decision_function = decision_fifo(decision_group_by_terminal)
-    # decision_function = decision_fifo(decision_optimal)
+    decision_function = decision_fifo(decision_optimal)
     # decision_function = decision_fifo(decision_optimal)
     
     print("Starting monthly simulation...")
