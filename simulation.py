@@ -75,25 +75,6 @@ TERMINALS_TO_NUMBER = {
     'Номин Трэйдинг': 11,
 }
 
-# TODO: Make the Terminals a class
-# class Terminal:
-#     def __init__(self, name, distance=0, capacity=0, storage_capacity=0):
-#         self.name = name
-#         self.distance = distance # minutes
-#         self.capacity = capacity # wagons per day
-#         self.storage_capacity = storage_capacity # wagons
-#         self.wagons = []
-
-#     def is_full(self):
-#         return len(self.wagons) >= self.capacity  # just an example
-
-# # Dictionary of terminal objects
-# # TERMINALS = {
-# #     'УБ МЧ': Terminal('УБ МЧ'),
-# #     'Туушин': Terminal('Туушин'),
-# #     # ...
-# # }
-
 ############################## Generation process #############################
 
 def generate_containers(
@@ -102,7 +83,7 @@ def generate_containers(
         date: str,
         terminal_col: str="Терминал",
         count_col: str="Count"
-        ) -> pd.DataFrame:
+        ) -> List[Dict]:
     """
     Generate containers based on terminal counts using Laplace smoothing.
     """
@@ -235,7 +216,6 @@ def decision_group_probalistic(containers: List[dict],
 
     return sequence
 
-
 def decision_optimal(containers: List[dict]) -> Sequence[int]:
     """
     Optimal decision based on the heuristic that the containers should be loaded
@@ -272,7 +252,9 @@ def decision_optimal(containers: List[dict]) -> Sequence[int]:
     
     return sequence
 
-
+def decision_bujnaa():
+    # TODO: Insert Bujnaa's code here.
+    pass
 # Wrapper to prioritize date over order
 def decision_fifo(decision_fn: Callable[[List[dict]], Sequence[int]]) -> Callable[[List[dict]], Sequence[int]]:
     """
@@ -357,6 +339,7 @@ def calculate_classification_cost(horoonii_too: int) -> int:
 def calculate_wait_minutes():
     # TODO: Implement wait_minutes
     return 60
+
 
  ###################### END-CALCULATE ##########################3
 
@@ -645,7 +628,7 @@ def main():
     
     # Define decision function
     def decision_function(containers):
-        return decision_group_probalistic(containers, prob_same_terminal=PROBABILITY, seed=42)
+        return decision_fifo(decision_group_probalistic(containers, prob_same_terminal=PROBABILITY, seed=42))
     
     # Alternative decision functions you can use:
     # decision_function = decision_random

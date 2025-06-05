@@ -54,3 +54,5 @@ desktop.ini
 # Misc
 ~.
 **~lock.*#
+
+*_notrack
