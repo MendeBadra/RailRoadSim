@@ -168,6 +168,8 @@ def decision_group_probalistic(containers: List[dict],
     Reorder containers such that adjacent ones are likely to share the same terminal,
     using a Markov-style probability model.
     """
+    if not containers:
+        return []
     random.seed(seed)
     np.random.seed(seed)
 
@@ -265,6 +267,8 @@ def decision_fifo(decision_fn: Callable[[List[dict]], Sequence[int]]) -> Callabl
     mix terminals fairly in a FIFO-aware way.
     """
     def fifo_decision(containers: List[dict]) -> Sequence[int]:
+        if not containers:
+            return []
         # Group containers by date
         date_to_containers = defaultdict(list)
         for i, c in enumerate(containers):
@@ -308,33 +312,29 @@ def load_containers_to_trains(containers: List[dict],
     """
     available_indices = set(range(len(containers)))
     for train in trains:
-        # Build a list of available containers (list of dicts)
-        available_containers = [containers[i] for i in available_indices]
-        # Map local indices in available_containers to original indices in containers
-        idx_map = {i: orig_idx for i, orig_idx in enumerate(available_indices)}
-        # Get the order in which to load containers
-        ordered_indices = decision_function(available_containers)
-        # Assert that ordered_indices is a sequence of valid indexes
-        assert isinstance(ordered_indices, (list, tuple, np.ndarray)), (
-            f"ordered_indices must be a sequence of indexes, got {type(ordered_indices)} with value: {ordered_indices}"
-        )
-        for idx in ordered_indices:
-            if not isinstance(idx, int) or idx < 0 or idx >= len(available_containers):
-                raise AssertionError(
-                    f"Invalid index in ordered_indices: {idx}. "
-                    f"ordered_indices: {ordered_indices}, available_containers length: {len(available_containers)}"
-                )
-        
-        # print(type(ordered_indices))
-        # Select indices for this train (up to train capacity)
-        selected_indices = [idx_map[i] for i in ordered_indices[:len(train)]]
-        for i, idx in enumerate(selected_indices):
-            train[i]['container_id'] = containers[idx]['container_id']
-            train[i]['Терминал'] = containers[idx]['Терминал']
-            train[i]['Date'] = containers[idx]['Date']
-        available_indices -= set(selected_indices)
-        if not available_indices:
+        if not available_indices: # Break if no more containers are left
             break
+        # Build a list of available containers (list of dicts)
+        available_containers = [containers[i] for i in sorted(list(available_indices))] # Sort for determinism
+        # Map local indices in available_containers to original indices in containers
+        idx_map = {i: orig_idx for i, orig_idx in enumerate(sorted(list(available_indices)))}
+        # Get the order in which to load containers
+        ordered_local_indices = decision_function(available_containers)
+        # Assert that ordered_indices is a sequence of valid indexes
+        assert isinstance(ordered_local_indices, (list, tuple, np.ndarray)), (
+            f"ordered_indices must be a sequence of indexes, got {type(ordered_local_indices)} with value: {ordered_local_indices}"
+        )
+        
+        # Select indices for this train (up to train capacity)
+        selected_local_indices = ordered_local_indices[:len(train)]
+        selected_original_indices = [idx_map[i] for i in selected_local_indices]
+        
+        for i, original_idx in enumerate(selected_original_indices):
+            train[i]['container_id'] = containers[original_idx]['container_id']
+            train[i]['Терминал'] = containers[original_idx]['Терминал']
+            train[i]['Date'] = containers[original_idx]['Date']
+        available_indices -= set(selected_original_indices)
+        
     return trains
 
 
@@ -344,7 +344,7 @@ def load_containers_to_trains(containers: List[dict],
 def calculate_classification_cost(horoonii_too: int) -> int:
     """Here I mean classification as shunting cost or Huruudultiin zardal"""
     #  huleelgiin_chingeleg: int = 0, huleelgiin_chingelegiin_time: int = 0, total_terminaluudiin_hureh_zai: int = 318
-    horoonii_zardal = horoonii_too = horoonii_too * MINUTES_PER_HOROO * LOCOMOTIVE_COST_PER_MINUTE # tsagt 210k minuted 3.5k
+    horoonii_zardal = horoonii_too * MINUTES_PER_HOROO * LOCOMOTIVE_COST_PER_MINUTE # tsagt 210k minuted 3.5k
     # huleelgiin_zardal = huleelgiin_chingeleg * huleelgiin_chingelegiin_time * PENALTY_PER_MINUTE # minutaar
     # terminal_hurgeh_zardal = total_terminaluudiin_hureh_zai * LOCOMOTIVE_COST_PER_MINUTE
     # niit_zardal = horoonii_zardal + huleelgiin_zardal + terminal_hurgeh_zardal
@@ -394,41 +394,39 @@ def bootstrap(data) :
 def calculate_penalty_cost(trains: List[List[Dict]]) -> float:
     """Calculate total penalty cost for containers exceeding terminal capacity."""
     total_penalty = 0
-    terminal_counts = {}
+    terminal_counts = Counter()
     for train in trains:
         for container in train:
-            terminal = container['Терминал']
-            terminal_counts[terminal] = terminal_counts.get(terminal, 0) + 1
-    # print("Terminal COUNTS \n", terminal_counts)
+            if container.get('Терминал'):
+                terminal_counts[container['Терминал']] += 1
 
     penalty_df = pd.read_excel("input/Data_main.xlsx")
     penalty_df = penalty_df.iloc[1:433,5].tolist()
 
     for terminal, count in terminal_counts.items():
-        capacity = TERMINALS.get(terminal, {}).get("capacity", 1)
+        if terminal not in TERMINALS: continue
+        capacity = TERMINALS[terminal].get("capacity", 1)
         if count > capacity:
             excess = count - capacity
-            # print(f"[Train {train_idx}] Terminal '{terminal}' exceeded by {excess} container(s).")
             expected_minutes = calculate_wait_minutes(capacity, penalty_df)
             total_penalty += excess * PENALTY_PER_MINUTE * expected_minutes
 
     return total_penalty
 
 def calculate_delivery_cost(trains: List[List[Dict]]):
-    # TODO: Finish this function
+    """Calculate total cost to deliver containers to all unique terminals visited."""
     total_delivery_cost = 0
+    unique_terminals_across_all_trains = set()
     for train in trains:
-        unique_terminals = set()
         for wagon in train:
             terminal = wagon.get('Терминал')
             if terminal is not None:
-                unique_terminals.add(terminal)
+                unique_terminals_across_all_trains.add(terminal)
 
-        for terminal in unique_terminals:
-            total_delivery_cost += LOCOMOTIVE_COST_PER_MINUTE * TERMINALS[terminal]['distance'] * 2 # Because we have to deliver and comeback.
-        
+    for terminal in unique_terminals_across_all_trains:
+        # Cost is for one round trip to a terminal area
+        total_delivery_cost += LOCOMOTIVE_COST_PER_MINUTE * TERMINALS[terminal]['distance'] * 2
 
-    # For each terminal, assume that the terminal_count (number of cargoes going into that terminal) doesn't matter
     return total_delivery_cost
 
 
@@ -447,6 +445,9 @@ def load_container_data(containers_file_path: Union[str, Path]) -> List[dict]:
     """Load container data from Excel file."""
     print(f"Loading container data from {containers_file_path}")
     containers_df = pd.read_excel(containers_file_path)
+    # Ensure 'Date' is a string in 'YYYY-MM-DD' format
+    if pd.api.types.is_datetime64_any_dtype(containers_df['Date']):
+        containers_df['Date'] = containers_df['Date'].dt.strftime('%Y-%m-%d')
     containers = containers_df.to_dict(orient="records")
     print(f"Loaded {len(containers)} containers")
     return containers
@@ -465,6 +466,8 @@ def count_transitions(seq: Union[List, str]) -> int:
     :param seq: Жагсаалт (List) эсвэл тэмдэгт мөр (str)
     :return: Огтлолын тоо (int)
     """
+    if not seq:
+        return 0
     if isinstance(seq, str):
         seq = seq.split(",")
 
@@ -526,14 +529,18 @@ def print_simulation_summary(results_df: pd.DataFrame) -> None:
     print("="*50)
     print(f"Total Classification Cost: {results_df['classification_cost'].sum():,.0f} MNT")
     print(f"Total Penalty Cost: {results_df['penalty_cost'].sum():,.0f} MNT")
-    print(f"Total Delivery Cost: {results_df['delivery_cost'].sum():,.0f}")
+    print(f"Total Delivery Cost: {results_df['delivery_cost'].sum():,.0f} MNT")
+    print("-" * 25)
     print(f"Total Cost: {results_df['total_cost'].sum():,.0f} MNT")
+    print("="*50)
     print(f"Total Containers Loaded: {results_df['containers_loaded'].sum():,}")
+    print(f"Containers Remaining in Backlog: {results_df['containers_available'].iloc[-1]:,}")
     print(f"Average Daily Cost: {results_df['total_cost'].mean():,.0f} MNT")
     print(f"Average Containers per Day: {results_df['containers_loaded'].mean():.1f}")
     print(f"Days simulated: {len(results_df)}")
+    print("="*50 + "\n")
 
-# has got an error
+
 def save_simulation_results(results_df: pd.DataFrame, 
                           start_date: str, 
                           end_date: str,
@@ -551,20 +558,20 @@ def save_simulation_results(results_df: pd.DataFrame,
     results_df.to_csv(csv_path, index=False)
     
     # Save summary stats
-    # ...existing code...
     summary_stats = {
         'total_classification_cost': float(results_df['classification_cost'].sum()),
         'total_penalty_cost': float(results_df['penalty_cost'].sum()),
+        'total_delivery_cost': float(results_df['delivery_cost'].sum()),
         'total_cost': float(results_df['total_cost'].sum()),
         'total_containers_loaded': int(results_df['containers_loaded'].sum()),
+        'containers_remaining_at_end': int(results_df['containers_available'].iloc[-1]),
         'avg_daily_cost': float(results_df['total_cost'].mean()),
         'avg_containers_per_day': float(results_df['containers_loaded'].mean())
     }
 
-    
     summary_path = output_dir / f"summary_{start_date}_to_{end_date}.json"
-    with open(summary_path, 'w') as f:
-        json.dump(summary_stats, f, indent=2)
+    with open(summary_path, 'w', encoding='utf-8') as f:
+        json.dump(summary_stats, f, indent=2, ensure_ascii=False)
     
     print(f"Results saved to {output_dir}")
 
@@ -573,16 +580,16 @@ def run_daily_simulation(containers: List[dict],
                         number_of_trains: int = NUMBER_OF_TRAINS,
                         number_of_wagons: int = NUMBER_OF_WAGONS) -> Dict:
     """
-    Run simulation for a single day with given containers.
+    Run simulation for a single day with a given pool of available containers.
     
     Args:
-        containers: List of available containers
-        decision_function: Function to decide container loading order
-        number_of_trains: Number of trains to generate
-        number_of_wagons: Number of wagons per train
+        containers: List of available containers for the current day.
+        decision_function: Function to decide container loading order.
+        number_of_trains: Number of trains to generate.
+        number_of_wagons: Number of wagons per train.
     
     Returns:
-        Dictionary containing simulation results
+        Dictionary containing simulation results for the day.
     """
     if not containers:
         return {
@@ -592,22 +599,22 @@ def run_daily_simulation(containers: List[dict],
             'total_delivery_cost': 0,
             'total_cost': 0,
             'containers_loaded': 0,
-            'containers_available': 0,
+            'containers_available_at_start': 0,
             'train_sequences': []
         }
     
-    # Generate trains
+    # Generate empty trains
     trains = generate_trains(number_of_trains=number_of_trains,
                            number_of_wagons=number_of_wagons)
     
-    # Load containers to trains
-    trains = load_containers_to_trains(containers, trains, decision_function)
+    # Load containers onto the trains according to the decision function
+    loaded_trains = load_containers_to_trains(containers, trains, decision_function)
     
-    # Calculate costs
+    # Calculate costs based on the loaded trains
     total_classification_cost = 0
     train_sequences = []
     
-    for train in trains:
+    for train in loaded_trains:
         train_terminal_sequence = train_to_terminal_sequence(train)
         train_sequences.append(train_terminal_sequence)
         
@@ -615,36 +622,38 @@ def run_daily_simulation(containers: List[dict],
         classification_cost = calculate_classification_cost(horoonii_too=horoonii_too)
         total_classification_cost += classification_cost
     
-    # Calculate penalty cost
-    total_penalty_cost = calculate_penalty_cost(trains)
+    total_penalty_cost = calculate_penalty_cost(loaded_trains)
+    total_delivery_cost = calculate_delivery_cost(loaded_trains)
     
-    total_delivery_cost = calculate_delivery_cost(trains)
-    
-    # Count loaded containers
-    containers_loaded = sum(1 for train in trains for wagon in train if wagon['container_id'] is not None)
+    # Count how many containers were actually loaded
+    containers_loaded = sum(1 for train in loaded_trains for wagon in train if wagon['container_id'] is not None)
     
     return {
-        'trains': trains,
+        'trains': loaded_trains,
         'total_classification_cost': total_classification_cost,
         'total_penalty_cost': total_penalty_cost,
         'total_delivery_cost': total_delivery_cost,
         'total_cost': total_classification_cost + total_penalty_cost + total_delivery_cost,
         'containers_loaded': containers_loaded,
-        'containers_available': len(containers),
+        'containers_available_at_start': len(containers),
         'train_sequences': train_sequences
     }
 
 def save_train_sequences_excel(train_sequences_by_day: dict, output_path: Path):
+    """Saves the detailed daily train loading orders to an Excel file, with each day on a separate sheet."""
     with pd.ExcelWriter(output_path) as writer:
         for date, trains in train_sequences_by_day.items():
             rows = []
             for train_idx, train in enumerate(trains):
-                for wagon in train:
-                    row = wagon.copy()
-                    row['train_number'] = train_idx + 1
-                    rows.append(row)
-            df = pd.DataFrame(rows)
-            df.to_excel(writer, sheet_name=str(date), index=False)
+                for wagon_idx, wagon in enumerate(train):
+                    if wagon.get('container_id') is not None:
+                        row = wagon.copy()
+                        row['train_number'] = train_idx + 1
+                        row['wagon_position'] = wagon_idx + 1
+                        rows.append(row)
+            if rows:
+                df = pd.DataFrame(rows)
+                df.to_excel(writer, sheet_name=str(date), index=False)
 
 def run_monthly_simulation(containers_file_path: Union[str, Path],
                           start_date: str = "2025-06-01",
@@ -653,57 +662,56 @@ def run_monthly_simulation(containers_file_path: Union[str, Path],
                           save_results: bool = True,
                           output_dir: Union[str, Path] = None) -> pd.DataFrame:
     """
-    Run simulation for a full month, day by day.
+    Run simulation for a full month, day by day, tracking the backlog of containers.
     
     Returns:
-        DataFrame with daily simulation results
+        DataFrame with daily simulation results.
     """
-    # Load data
-    containers = load_container_data(containers_file_path)
+    # Load all container data for the simulation period
+    all_containers = load_container_data(containers_file_path)
     
-    print(f"Total containers in input: {len(containers)}")
-    print(f"First 10 container dates: {[c['Date'] for c in containers[:10]]}")
-    # Set default decision function
     if decision_function is None:
-        def default_decision_function(containers):
-            return decision_group_probalistic(containers, prob_same_terminal=PROBABILITY, seed=42)
-        decision_function = default_decision_function
+        decision_function = decision_fifo(
+            lambda c: decision_group_probalistic(c, prob_same_terminal=PROBABILITY, seed=42)
+        )
     
-    # Get date range
     dates = get_date_range(start_date, end_date)
     print(f"Simulating from {start_date} to {end_date} ({len(dates)} days)")
     
-    # Run simulation for each day
     daily_results = []
-    train_sequences_by_day = {}
-    loaded_ids = set()
-    # main simulation loop
-    for day_idx, date in enumerate(dates):
-        print(f"Simulating day {day_idx + 1}/{len(dates)}: {date}")
-        
-        # Get containers available up to this date
-        # available_containers = filter_containers_by_date(containers, date)
-        available_containers = [c for c in containers if c['Date'] <= date and c['container_id'] not in loaded_ids]
+    trains_by_day = {}
+    loaded_container_ids = set()
 
-        print(f"Day {date}: available_containers={len(available_containers)}, loaded_ids={len(loaded_ids)}")
-        # Run daily simulation
-        daily_result = run_daily_simulation(available_containers, decision_function)
-        # train_sequences_by_day[date] = daily_result['train_sequences'] 
-        train_orders = []
+    # Main simulation loop
+    for day_idx, date in enumerate(dates):
+        print("-" * 20)
+        print(f"Simulating Day {day_idx + 1}/{len(dates)}: {date}")
+        
+        # Determine the pool of containers available for loading today
+        # These are containers that have arrived on or before today AND have not been loaded yet.
+        available_at_start = [
+            c for c in all_containers if c['Date'] <= date and c['container_id'] not in loaded_container_ids
+        ]
+        print(f"  Containers available at start of day: {len(available_at_start)}")
+
+        # Run the simulation for the current day with the available container pool
+        daily_result = run_daily_simulation(available_at_start, decision_function)
+        
+        # Store the detailed train loading plan for this day
+        trains_by_day[date] = daily_result['trains']
+        
+        # Update the set of loaded container IDs based on the daily result
         for train in daily_result['trains']:
-            train_order = []
             for wagon in train:
-                assert wagon['container_id'] is not None, "wagon id is empty!"
-                loaded_ids.add(wagon['container_id'])
-                train_order.append({
-                'container_id': wagon['container_id'],
-                'Терминал': wagon['Терминал'],
-                'Date': wagon['Date']
-                })
-            train_orders.append(train_order)
-            
-        train_sequences_by_day[date] = train_orders
-        # Store results in a flat structure
+                if wagon.get('container_id') is not None:
+                    loaded_container_ids.add(wagon['container_id'])
+        
+        # Calculate the number of containers remaining in the backlog at the END of the day
+        remaining_at_end = len([
+            c for c in all_containers if c['container_id'] not in loaded_container_ids
+        ])
+
+        # Store a summary of the day's results
         result_row = {
             'date': date,
             'classification_cost': daily_result['total_classification_cost'],
@@ -711,23 +719,27 @@ def run_monthly_simulation(containers_file_path: Union[str, Path],
             'delivery_cost': daily_result['total_delivery_cost'],
             'total_cost': daily_result['total_cost'],
             'containers_loaded': daily_result['containers_loaded'],
-            # 'containers_available': daily_result['containers_available']
-            'containers_available': len([c for c in containers if c['container_id'] not in loaded_ids])
+            'containers_available': remaining_at_end  # Number of containers left in backlog
         }
         daily_results.append(result_row)
         
-        print(f"  Available: {daily_result['containers_available']}, "
-              f"Loaded: {daily_result['containers_loaded']}, "
-              f"Cost: {daily_result['total_cost']:,.0f} MNT")
-    # DEBUG
-    print(f"Day {date}: available_containers={len(available_containers)}, loaded_ids={len(loaded_ids)}")
-    # Convert to DataFrame
+        print(f"    Loaded today: {daily_result['containers_loaded']}, "
+              f"Remaining backlog: {remaining_at_end}, "
+              f"Daily Cost: {daily_result['total_cost']:,.0f} MNT")
+    
+    # Convert daily results to a DataFrame
     results_df = list_to_dataframe(daily_results)
     
     # Save results if requested
     if save_results:
+        if output_dir is None:
+            output_dir = Path("simulation_results")
+        output_dir.mkdir(exist_ok=True, parents=True)
+        
         save_simulation_results(results_df, start_date, end_date, output_dir)
-        save_train_sequences_excel(train_sequences_by_day, Path(output_dir) / f"train_sequences_{start_date}_to_{end_date}.xlsx")
+        train_excel_path = output_dir / f"train_sequences_{start_date}_to_{end_date}.xlsx"
+        save_train_sequences_excel(trains_by_day, train_excel_path)
+    
     return results_df
 
 def main():
@@ -737,20 +749,16 @@ def main():
     simulation_data_dir = Path("simulation_artifacts")
     containers_file = simulation_data_dir / "june_2025_containters_extended_smoothed.xlsx"
     
-    # Define decision function
-    # def decision_function(containers):
-    #     return decision_fifo(decision_group_probalistic(containers, prob_same_terminal=PROBABILITY, seed=42))
-    
-    # decision_function = decision_fifo(lambda c: decision_group_probalistic(c, prob_same_terminal=PROBABILITY, seed=42))
-    # Alternative decision functions you can use:
+    # Define which decision function to use
+    # Options:
     # decision_function = decision_fifo(decision_random)
     # decision_function = decision_fifo(decision_group_by_terminal)
+    # decision_function = decision_fifo(lambda c: decision_group_probalistic(c, prob_same_terminal=0.7, seed=42))
     decision_function = decision_fifo(decision_optimal)
-    # decision_function = decision_fifo(decision_optimal)
     
-    print("Starting monthly simulation...")
-    output_dir = Path("simulation_results")
-    output_dir.mkdir(exist_ok=True)
+    print("Starting monthly simulation with 'decision_optimal'...")
+    output_dir = Path("simulation_results/optimal_strategy")
+    
     # Run the simulation
     results_df = run_monthly_simulation(
         containers_file_path=containers_file,
@@ -761,67 +769,10 @@ def main():
         output_dir=output_dir
     )
     
-    # Print summary
+    # Print a final summary to the console
     print_simulation_summary(results_df)
-    print(f"Saved to {output_dir}")
 
-    return results_df.to_csv(output_dir / "results_df.csv")
+    return results_df
 
 if __name__ == "__main__":
-    # Run the simulation
-    results_df = main()
-
-
-
-# if __name__ == "__main__":
-#     simulation_data_dir = Path("simulation_artifacts")
-#     input_dir = Path("input")
-#     probability_excel_path = input_dir / "UBmagad.xlsx"
-
-#     date="2025-06-01"
-#     # containers = generate_containers(
-#     #     probability_excel_path,
-#     #     number_of_containers=NUMBER_OF_CONTAINERS,
-#     #     date=date
-#     # )
-#     # For reproducing the results
-#     # containers.to_excel(simulation_data / f"containers_{date}.xlsx", index=False)
-#     #containers = pd.read_excel(simulation_data_dir / f"containers_{date}.xlsx")
-#     #containers = dataframe_to_list(containers)
-#     containers = pd.read_excel( simulation_data_dir / "june_2025_containters_extended_smoothed.xlsx", index=False)
-#     containers = dataframe_to_list(containers)
-#     # Save containers to csv
-    
-#     # print(containers)
-#     # Generate trains
-#     trains = generate_trains(number_of_trains=NUMBER_OF_TRAINS,
-#                              number_of_wagons=NUMBER_OF_WAGONS)
-#     # print(trains)
-#     # Save trains to csv
-#     # pd.DataFrame(trains).to_csv(simulation_data / "trains.csv", index=False)
-    
-#     def decision_function(containers):
-#         return decision_group_probalistic(containers, prob_same_terminal=PROBABILITY, seed=42)
-#     # decision_function = decision_random
-#     # decision_function = decision_group_by_terminal
-#     # decision_function = decision_optimal
-
-#     trains = load_containers_to_trains(containers, trains, decision_function)
-#     print(f"Trains: {[wagon['Терминал'] for wagon in trains[0]]}")
-#     print('LENGTH1=',len(trains[0]), "LENGTH2=",len(trains[1]))
-#     trains_terminal_sequences = [train_to_terminal_sequence(train) for train in trains]
-#     print(trains_terminal_sequences)
-#     calculate_penalty_cost(trains_terminal_sequences)
-#     # horoonii_too = count_transitions(trains_terminal_sequences)
-#     # print('HOROODOLT',horoonii_too)
-#     expense_sum = 0.0
-#     for train_terminal_sequence in trains_terminal_sequences:
-#         horoonii_too = count_transitions(train_terminal_sequence)
-#         # horoonii_too_dict[train_terminal_sequence] = horoonii_too
-#         classification_cost = calculate_classification_cost(horoonii_too=horoonii_too)
-#         print(f"Huruunii zardal: {classification_cost}")
-#         expense_sum += classification_cost
-#         print('HOROODOLT',horoonii_too)
-
-#     print('expense_sum',expense_sum)
-
+    main()
