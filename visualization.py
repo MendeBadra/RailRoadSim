@@ -153,6 +153,13 @@ def update(frame):
 
     # 2. Check if train finished entire path
     if cs['train_index'] >= len(train_path) - 1:
+        # Reset to start for repeat loop
+        cs['train_index'] = 0
+        cs['frame'] = 0
+        cs['dots_done'] = True  # or False if you want dots at start station
+        train_rect.set_visible(False)
+        dots.clear()
+        active_dots.clear()
         return [train_rect]
 
     # 3. Move train to next station
