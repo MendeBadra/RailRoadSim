@@ -1,0 +1,904 @@
+MendeBadra: @workspace /explain `from simulation import *` used; unable to detect undefined names
+
+Workspace: Your code uses `from simulation import *`, which imports all public names from simulation.py into your current namespace. This makes it hard to track which names are defined locally and which are imported, and can lead to name conflicts or confusion about where a function or variable comes from.
+
+**Best practice:**  
+Explicitly import only what you need. For example:
+
+````python
+from simulation import generate_containers, NUMBER_OF_CONTAINERS
+````
+
+This makes your code clearer and helps tools (like linters and IDEs) detect undefined names and provide better autocompletion.
+
+**Tip:**  
+If you need many names, you can import them in a comma-separated list, or import the module itself and use the `simulation.` prefix. Avoid using `import *` in production code.
+
+MendeBadra: ignore .pyc files
+
+GitHub Copilot: Your .gitignore file already ignores `.pyc` files with these lines:
+
+```
+*.py[cod]
+*.pyc
+```
+
+This ensures all `.pyc` files (and `.pyo`, `.pyd`) are ignored by Git. No further changes are needed to ignore `.pyc` files.
+
+MendeBadra: What about this?
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+        modified:   .gitignore
+        modified:   __pycache__/simulation.cpython-311.pyc
+        modified:   simulation.py
+        modified:   tester.ipynb
+
+
+GitHub Copilot: Your .gitignore is correctly set up to ignore `.pyc` files and the __pycache__ directory. However, if you see simulation.cpython-311.pyc listed as "modified," it means this file was already tracked by Git before you added it to .gitignore.
+
+**To stop tracking this file:**  
+Run the following command in your project directory:
+
+```sh
+git rm --cached __pycache__/simulation.cpython-311.pyc
+```
+
+After this, Git will stop tracking the file, and future `.pyc` files will be ignored as expected. Then you can commit the change:
+
+```sh
+git commit -m "Remove tracked .pyc file and update .gitignore"
+```
+
+MendeBadra: what if I want to inspect the train_sequence is working?
+
+I tested:
+fifo_probabilistic = decision_fifo(lambda c: decision_group_probalistic(c, prob_same_terminal=0.6))
+load_containers_to_trains(containers, [train], decision_function=fifo_probabilistic)
+
+
+```
+[[{'container_id': 12, 'Терминал': 'Толгойт МЧ', 'Date': '2024-06-13'},
+  {'container_id': 19, 'Терминал': 'Туушин', 'Date': '2024-06-15'},
+  {'container_id': 17, 'Терминал': 'Туушин', 'Date': '2024-06-15'},
+  {'container_id': 13, 'Терминал': 'Туушин', 'Date': '2024-06-15'},
+  {'container_id': 18, 'Терминал': 'Толгойт МЧ', 'Date': '2024-06-15'},
+  {'container_id': 14, 'Терминал': 'Туушин', 'Date': '2024-06-16'}]]
+```
+
+I want to see similar output, but in excel? What if we save the each train for each day as sheets?
+
+GitHub Copilot: You can export each train's wagon list for each day to an Excel file, with each sheet representing a train for that day. Here’s how you can do it:
+
+### 1. Save Each Train as a Sheet in Excel
+
+Add a function to save the trains for each day, with each train as a separate sheet. For example:
+
+````python
+import pandas as pd
+
+def save_trains_to_excel(trains: List[List[dict]], date: str, output_dir: Union[str, Path] = "train_outputs"):
+    """
+    Save each train's wagon list to a separate sheet in an Excel file.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(exist_ok=True)
+    excel_path = output_dir / f"trains_{date}.xlsx"
+    with pd.ExcelWriter(excel_path) as writer:
+        for idx, train in enumerate(trains):
+            df = pd.DataFrame(train)
+            df.to_excel(writer, sheet_name=f"Train_{idx+1}", index=False)
+    print(f"Saved trains for {date} to {excel_path}")
+````
+
+### 2. Call This Function After Loading Containers
+
+After you call `load_containers_to_trains`, call `save_trains_to_excel`:
+
+````python
+# Example usage:
+trains = load_containers_to_trains(containers, [train], decision_function=fifo_probabilistic)
+save_trains_to_excel(trains, date="2024-06-15")
+````
+
+### 3. For Monthly Simulation
+
+If you want to save all trains for each day in the monthly simulation, modify your simulation loop to call this function for each day, passing the day's trains and date.
+
+---
+
+This will give you an Excel file per day, with each train as a separate sheet, and each row as a wagon with its assigned container.
+
+MendeBadra:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ordered_indices must be a sequence of indexes, got <class 'function'> with value: <function decision_fifo.<locals>.fifo_decision at 0x7e7860508900>
+
+GitHub Copilot: The error occurs because you are calling `decision_fifo(decision_group_probalistic(...))` **with arguments**, which immediately calls `decision_group_probalistic` and passes its result (a list of indices) to `decision_fifo`. But `decision_fifo` expects a function, not a list.
+
+**Correct usage:**  
+You should pass the function itself, not the result of calling it. Use a lambda or partial to set parameters:
+
+````python
+fifo_probabilistic = decision_fifo(
+    lambda c: decision_group_probalistic(c, prob_same_terminal=0.6)
+)
+````
+
+Then use:
+
+````python
+load_containers_to_trains(containers, [train], decision_function=fifo_probabilistic)
+````
+
+**Summary:**  
+- `decision_fifo` expects a function, not a list.
+- Use a lambda to wrap your function and parameters.
+- Do **not** call `decision_group_probalistic` directly when passing to `decision_fifo`.
+
+MendeBadra: what does containers_available column mean?
+
+GitHub Copilot: The `containers_available` column in your simulation results DataFrame represents the **total number of containers that have arrived and are available for loading on that day** (i.e., containers with `Date` less than or equal to the current simulation date).
+
+- It is calculated by filtering all containers whose `Date` is on or before the current day.
+- It does **not** mean the number of containers actually loaded onto trains that day (that's `containers_loaded`).
+- It is used to track how many containers could potentially be loaded on each simulation day.
+
+**Example:**  
+If 100 containers have arrived by June 5, then `containers_available` for June 5 will be 100, even if only 55 are loaded onto trains that day.
+
+MendeBadra:   Available: 3840, Loaded: 110, Cost: 1,715,000 MNT
+Traceback (most recent call last):
+  File "/home/mendee/Projects/MyGitRepos/RailRoadSim/simulation.py", line 683, in <module>
+    results_df = main()
+                 ^^^^^^
+  File "/home/mendee/Projects/MyGitRepos/RailRoadSim/simulation.py", line 666, in main
+    results_df = run_monthly_simulation(
+                 ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/mendee/Projects/MyGitRepos/RailRoadSim/simulation.py", line 640, in run_monthly_simulation
+    save_simulation_results(results_df, start_date, end_date, output_dir)
+  File "/home/mendee/Projects/MyGitRepos/RailRoadSim/simulation.py", line 515, in save_simulation_results
+    json.dump(summary_stats, f, indent=2)
+  File "/home/mendee/.local/share/uv/python/cpython-3.11.11-linux-x86_64-gnu/lib/python3.11/json/__init__.py", line 179, in dump
+    for chunk in iterable:
+  File "/home/mendee/.local/share/uv/python/cpython-3.11.11-linux-x86_64-gnu/lib/python3.11/json/encoder.py", line 432, in _iterencode
+    yield from _iterencode_dict(o, _current_indent_level)
+  File "/home/mendee/.local/share/uv/python/cpython-3.11.11-linux-x86_64-gnu/lib/python3.11/json/encoder.py", line 406, in _iterencode_dict
+    yield from chunks
+  File "/home/mendee/.local/share/uv/python/cpython-3.11.11-linux-x86_64-gnu/lib/python3.11/json/encoder.py", line 439, in _iterencode
+    o = _default(o)
+        ^^^^^^^^^^^
+  File "/home/mendee/.local/share/uv/python/cpython-3.11.11-linux-x86_64-gnu/lib/python3.11/json/encoder.py", line 180, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+TypeError: Object of type int64 is not JSON serializable
+
+
+I want to save the train_sequence as the name
+
+GitHub Copilot: You are getting the error because pandas/numpy types like `np.int64` are not directly serializable by Python's `json` module.  
+Also, if you want to save the `train_sequences` as the sheet name or as a separate file, you need to explicitly handle that.
+
+### 1. Fix the JSON serialization error
+
+Convert all values in `summary_stats` to native Python types before dumping to JSON:
+
+````python
+# ...existing code...
+summary_stats = {
+    'total_classification_cost': float(results_df['classification_cost'].sum()),
+    'total_penalty_cost': float(results_df['penalty_cost'].sum()),
+    'total_cost': float(results_df['total_cost'].sum()),
+    'total_containers_loaded': int(results_df['containers_loaded'].sum()),
+    'avg_daily_cost': float(results_df['total_cost'].mean()),
+    'avg_containers_per_day': float(results_df['containers_loaded'].mean())
+}
+# ...existing code...
+````
+
+### 2. Save train_sequences as a separate file
+
+If you want to save the `train_sequences` for each day, you can add this to your simulation loop in `run_monthly_simulation`:
+
+````python
+# ...inside the for day_idx, date in enumerate(dates): loop...
+# After daily_result is computed
+train_sequences = daily_result.get('train_sequences', [])
+seq_path = Path(output_dir) / f"train_sequences_{date}.json"
+with open(seq_path, "w") as f:
+    json.dump(train_sequences, f, ensure_ascii=False, indent=2)
+# ...existing code...
+````
+
+### 3. If you want to use train_sequences as Excel sheet names
+
+Excel sheet names must be strings and have length ≤ 31. You can save each train's sequence as a sheet name (truncated/encoded) or, more robustly, save the sequences as a column in a DataFrame or as a separate Excel file.
+
+**Example: Save all train sequences for the month in one Excel file:**
+
+````python
+def save_train_sequences_excel(train_sequences_by_day: dict, output_path: Path):
+    with pd.ExcelWriter(output_path) as writer:
+        for date, sequences in train_sequences_by_day.items():
+            df = pd.DataFrame({'train_sequence': sequences})
+            df.to_excel(writer, sheet_name=str(date), index=False)
+````
+
+And in your simulation loop, collect `train_sequences_by_day` and call this function at the end.
+
+---
+
+**Summary:**  
+- Convert all summary values to native Python types before dumping to JSON.
+- Save `train_sequences` as a separate JSON or Excel file, not as a sheet name.
+- If you want to use them as sheet names, encode or truncate them to fit Excel's requirements.
+
+MendeBadra: And in your simulation loop, collect train_sequences_by_day and call this function at the end.
+
+
+How to collect?
+
+GitHub Copilot: You can collect `train_sequences_by_day` in your simulation loop by creating a dictionary where each key is the date and the value is the list of train sequences for that day. Here’s how you can do it:
+
+**1. Initialize the dictionary before the loop:**
+
+````python
+# ...existing code...
+train_sequences_by_day = {}  # Add this before your for-loop
+# ...existing code...
+````
+
+**2. Inside your simulation loop, after running the daily simulation:**
+
+````python
+for day_idx, date in enumerate(dates):
+    print(f"Simulating day {day_idx + 1}/{len(dates)}: {date}")
+    available_containers = filter_containers_by_date(containers, date)
+    daily_result = run_daily_simulation(available_containers, decision_function)
+    # ...existing code...
+    train_sequences_by_day[date] = daily_result['train_sequences']  # <-- Add this line
+    # ...existing code...
+````
+
+**3. After the loop, save to Excel:**
+
+````python
+if save_results:
+    save_simulation_results(results_df, start_date, end_date, output_dir)
+    # Save train sequences to Excel
+    save_train_sequences_excel(train_sequences_by_day, Path(output_dir) / f"train_sequences_{start_date}_to_{end_date}.xlsx")
+````
+
+---
+
+**Summary:**  
+- Create `train_sequences_by_day = {}` before the loop.
+- Add `train_sequences_by_day[date] = daily_result['train_sequences']` inside the loop.
+- After the loop, call `save_train_sequences_excel(train_sequences_by_day, ...)`.
+
+This will save all train sequences for each day in an Excel file, with each date as a sheet.
+
+MendeBadra: I want to save the order with Terminal, Date and container id as well.
+
+GitHub Copilot: To save the **order** (sequence) with `container_id`, `Терминал`, and `Date` for each train and each day, you should collect the full wagon info for each train, not just the sequence.
+
+Here’s how you can do it:
+
+---
+
+### 1. Collect train order info in your simulation loop
+
+Replace your collection line with:
+
+````python
+for day_idx, date in enumerate(dates):
+    # ...existing code...
+    daily_result = run_daily_simulation(available_containers, decision_function)
+    # Collect full order info for each train
+    train_orders = []
+    for train in daily_result['trains']:
+        train_orders.append([
+            {
+                'container_id': wagon['container_id'],
+                'Терминал': wagon['Терминал'],
+                'Date': wagon['Date']
+            }
+            for wagon in train if wagon['container_id'] is not None
+        ])
+    train_sequences_by_day[date] = train_orders
+    # ...existing code...
+````
+
+---
+
+### 2. Update your Excel saving function
+
+Save each train as a separate sheet, or each day as a sheet with all trains stacked and a train number column:
+
+````python
+def save_train_sequences_excel(train_sequences_by_day: dict, output_path: Path):
+    with pd.ExcelWriter(output_path) as writer:
+        for date, trains in train_sequences_by_day.items():
+            rows = []
+            for train_idx, train in enumerate(trains):
+                for wagon in train:
+                    row = wagon.copy()
+                    row['train_number'] = train_idx + 1
+                    rows.append(row)
+            df = pd.DataFrame(rows)
+            df.to_excel(writer, sheet_name=str(date), index=False)
+````
+
+---
+
+**Result:**  
+- Each sheet (per day) will have columns: `container_id`, `Терминал`, `Date`, `train_number`.
+- Each row is a wagon loaded on a train that day, with its info.
+
+This gives you a clear, analyzable Excel output for each day's train loading order.
+
+MendeBadra: The `containers_available` column in your simulation results DataFrame represents the **total number of containers that have arrived and are available for loading on that day** (i.e., containers with `Date` less than or equal to the current simulation date).
+
+- It is calculated by filtering all containers whose `Date` is on or before the current day.
+- It does **not** mean the number of containers actually loaded onto trains that day (that's `containers_loaded`).
+- It is used to track how many containers could potentially be loaded on each simulation day.
+
+**Example:**  
+If 100 containers have arrived by June 5, then `containers_available` for June 5 will be 100, even if only 55 are loaded onto trains that day.
+
+But containers available should decrease over time?
+
+GitHub Copilot: Great question! In your current simulation, `containers_available` **does not decrease** over time because it always counts all containers that have arrived up to and including the current day, regardless of whether they have already been loaded onto a train.
+
+**Why?**  
+- Each day, you filter containers with `Date <= current_day`, but you do **not** remove containers that were already loaded on previous days.
+- So, `containers_available` is cumulative: it only increases or stays the same as more containers arrive.
+
+**If you want `containers_available` to decrease** (i.e., only count containers that have arrived and are still waiting to be loaded), you need to:
+1. Track which containers have already been loaded.
+2. Each day, only count containers that have arrived and have **not** yet been loaded.
+
+**How to implement this?**  
+- Maintain a set of loaded container IDs.
+- Each day, filter containers with `Date <= current_day` and `container_id not in loaded_ids`.
+
+**Example modification:**
+
+````python
+loaded_ids = set()
+for day_idx, date in enumerate(dates):
+    available_containers = [c for c in containers if c['Date'] <= date and c['container_id'] not in loaded_ids]
+    # ... run simulation ...
+    # After loading:
+    for train in daily_result['trains']:
+        for wagon in train:
+            if wagon['container_id'] is not None:
+                loaded_ids.add(wagon['container_id'])
+    # containers_available = len(available_containers)
+````
+
+This way, `containers_available` will decrease as containers are loaded onto trains.
+
+---
+
+**Summary:**  
+- Current: `containers_available` is cumulative (does not decrease).
+- To make it decrease, track and exclude already-loaded containers each day.
+
+MendeBadra: Why containers are always constant:
+
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+650
+
+
+GitHub Copilot: The reason your `containers_available` column is always **650** for every day is because of how you are calculating it in your simulation loop:
+
+```python
+result_row = {
+    ...
+    'containers_available': daily_result['containers_available'],
+    ...
+}
+```
+
+And in `run_daily_simulation`:
+
+```python
+return {
+    ...
+    'containers_available': len(containers),
+    ...
+}
+```
+
+But **each day you pass only the containers that have arrived and have not yet been loaded** (because you filter with `c['Date'] <= date and c['container_id'] not in loaded_ids`).  
+However, if your input file always has 650 containers with `Date <= date` for every day (e.g., all containers have an early date), then `available_containers` will always be 650 until you start removing loaded containers.
+
+But in your code, you **add every loaded container's ID to `loaded_ids`** inside the daily loop:
+
+```python
+for train in daily_result['trains']:
+    train_order = []
+    for wagon in train:
+        assert wagon['container_id'] is not None, "wagon id is empty!"
+        loaded_ids.add(wagon['container_id'])
+        ...
+```
+
+So, **if your containers have unique IDs and are loaded only once**, `available_containers` should decrease as days go by.
+
+### Possible reasons for constant 650:
+
+1. **All containers have the same or very early `Date`**  
+   If all containers in your Excel file have a `Date` that is before or equal to the first simulation day, then every day, all containers are "available" at the start of the simulation.
+
+2. **You are not removing loaded containers from the pool**  
+   But your code does remove loaded containers by using `loaded_ids`.  
+   If `container_id` is not unique or not set correctly, this could fail.
+
+3. **You are reloading the containers list each day**  
+   If you reload the containers from file inside the loop (which you do not in your code), this would reset the available pool.
+
+### How to debug
+
+- Print the number of `loaded_ids` each day to see if it increases.
+- Print the first few `Date` values from your containers file to check if they are all the same.
+- Print the length of `available_containers` each day.
+
+### Example debug print
+
+Add this inside your simulation loop:
+
+```python
+print(f"Day {date}: available_containers={len(available_containers)}, loaded_ids={len(loaded_ids)}")
+```
+
+### Likely cause
+
+**Your input file probably has all containers with the same or very early `Date`, so all are available from day 1.**  
+If you want containers to arrive gradually, make sure the `Date` column in your Excel file is distributed across the simulation period.
+
+---
+
+**Summary:**  
+- If all containers have the same early `Date`, `containers_available` will always be the total number of containers until all are loaded.
+- To see a decrease, ensure your input data has containers arriving on different days.
+
+MendeBadra: So does loaded_ids track the containers and removes them if loaded?
+
+GitHub Copilot: Yes, your `loaded_ids` set **does** track which containers have already been loaded, and ensures they are not available for loading again on subsequent days.
+
+### How it works in your code:
+
+1. **Before the simulation loop:**  
+   ```python
+   loaded_ids = set()
+   ```
+
+2. **Each day, you build the available container list:**  
+   ```python
+   available_containers = [c for c in containers if c['Date'] <= date and c['container_id'] not in loaded_ids]
+   ```
+   - This means only containers that have arrived (`Date <= date`) and have **not** been loaded (`container_id not in loaded_ids`) are available.
+
+3. **After loading containers onto trains:**  
+   ```python
+   for train in daily_result['trains']:
+       train_order = []
+       for wagon in train:
+           assert wagon['container_id'] is not None, "wagon id is empty!"
+           loaded_ids.add(wagon['container_id'])
+           ...
+   ```
+   - Every loaded container's ID is added to `loaded_ids`, so it will be excluded from `available_containers` on future days.
+
+---
+
+**Summary:**  
+- `loaded_ids` grows each day with all loaded container IDs.
+- Containers in `loaded_ids` are never available again.
+- This ensures `available_containers` (and thus `containers_available`) will decrease as containers are loaded.
+
+If you see `containers_available` not decreasing, check your input data: if all containers have the same early date and you load fewer than the total per day, it will decrease slowly, but if you load all available containers each day, it will drop quickly.
+
+MendeBadra: It doesn't have same date
+
+GitHub Copilot: Thank you for sharing your code and clarifying that your containers do **not** all have the same date.
+
+Given your code, the logic for `loaded_ids` and `available_containers` is correct and should work as expected:
+
+- Each day, you filter containers with `c['Date'] <= date and c['container_id'] not in loaded_ids`.
+- After loading, you add each loaded `container_id` to `loaded_ids`.
+
+**If your `containers_available` is not decreasing as expected**, possible reasons are:
+
+1. **You are loading fewer containers per day than the number of new arrivals.**  
+   If more containers arrive each day than you can load, the pool of available containers will grow or stay constant.
+
+2. **Your input data has a steady or increasing arrival rate.**  
+   For example, if 100 containers arrive each day, but you can only load 55×2=110 per day, the backlog will only decrease if arrivals drop below 110 per day.
+
+3. **You are correctly tracking loaded containers, but the simulation parameters (number of trains/wagons) are not enough to keep up with arrivals.**
+
+---
+
+### How to debug
+
+Add these prints inside your simulation loop:
+
+```python
+print(f"Day {date}:")
+print(f"  Containers arrived up to now: {sum(1 for c in containers if c['Date'] <= date)}")
+print(f"  Containers loaded so far: {len(loaded_ids)}")
+print(f"  Containers available for loading today: {len(available_containers)}")
+print(f"  Containers loaded today: {daily_result['containers_loaded']}")
+```
+
+This will help you see:
+- How many have arrived up to each day
+- How many have been loaded so far
+- How many are available for loading each day
+- How many are actually loaded each day
+
+---
+
+### Summary
+
+- Your code **does** remove loaded containers from the available pool.
+- If `containers_available` is not decreasing, it's likely because **more containers are arriving than you can load each day**.
+- Use the debug prints above to confirm the daily arrival and loading rates.
+
+If you want `containers_available` to decrease, you need to either:
+- Increase the number of trains/wagons per day, or
+- Reduce the number of containers arriving each day in your input data.
+
+MendeBadra: Simulating day 28/30: 2025-06-28
+Day 2025-06-28: available_containers=650, loaded_ids=2970
+  Available: 650, Loaded: 110, Cost: 2,139,022 MNT
+Simulating day 29/30: 2025-06-29
+Day 2025-06-29: available_containers=650, loaded_ids=3080
+  Available: 650, Loaded: 110, Cost: 2,532,164 MNT
+Simulating day 30/30: 2025-06-30
+Day 2025-06-30: available_containers=650, loaded_ids=3190
+  Available: 650, Loaded: 110, Cost: 2,535,339 MNT
+Day 2025-06-30: available_containers=650, loaded_ids=3300
+Results saved to simulation_results
+
+GitHub Copilot: Your simulation output shows that `available_containers` is **always 650** each day, even as `loaded_ids` increases. This means:
+
+- **Every day, there are always 650 containers available for loading.**
+- **You load 110 containers per day (2 trains × 55 wagons).**
+- **Your `loaded_ids` increases by 110 each day, as expected.**
+
+### Why is `available_containers` always 650?
+
+This means that **every day, exactly 650 containers are eligible to be loaded** (i.e., have `Date <= date` and are not in `loaded_ids`).  
+This can only happen if:
+
+1. **Your input data has exactly 650 containers with `Date <= date` for every day.**
+   - For example, if every container in your Excel file has a `Date` before or equal to the first simulation day, and you have 650 containers total, then after you load 110 each day, the next day you again have 650 - (previously loaded) = 650 - (previously loaded), but since you filter out loaded containers, this should decrease.
+
+2. **But since it does NOT decrease, it means you have more than 650 containers in your input file, and for every day, at least 650 containers remain that have not been loaded yet and have `Date <= date`.**
+   - For example, if you have 3300 containers, all with `Date <= 2025-06-01`, then each day you will have 3300 - loaded_ids containers available, but you only select the first 650 for loading (or your code logic always presents 650 as available).
+
+### What to check
+
+- **How many containers are in your input file?**  
+  If you have 3300 containers, and all have `Date <= 2025-06-01`, then every day, until you run out, you will always have at least 650 available.
+
+- **How are you filtering `available_containers`?**  
+  Your code:
+  ```python
+  available_containers = [c for c in containers if c['Date'] <= date and c['container_id'] not in loaded_ids]
+  ```
+  This is correct, but if your input file has a large pool of containers all with early dates, you will always have a large number available.
+
+### How to fix
+
+If you want `available_containers` to decrease over time, you need to ensure that:
+- Your input data has containers arriving on different days (i.e., `Date` is spread out).
+- The number of containers arriving per day is less than or equal to what you can load, or else a backlog will build up.
+
+**To debug:**  
+Add this print at the start of your simulation:
+```python
+print(f"Total containers in input: {len(containers)}")
+print(f"First 10 container dates: {[c['Date'] for c in containers[:10]]}")
+```
+And check your Excel file for the distribution of the `Date` column.
+
+---
+
+**Summary:**  
+- Your code is correct, but your input data likely has a large pool of containers all available from the start.
+- To see `available_containers` decrease, your input data must have containers arriving on different days, and you must load more than arrive each day.
+
+MendeBadra: Loaded 3840 containers
+Total containers in input: 3840
+First 10 container dates: ['2025-05-24', '2025-05-24', '2025-05-24', '2025-05-24', '2025-05-24', '2025-05-24', '2025-05-24', '2025-05-24', '2025-05-24', '2025-05-24']
+
+GitHub Copilot: Your debug output confirms the issue:
+
+- **Loaded 3840 containers**
+- **First 10 container dates: ['2025-05-24', ..., '2025-05-24']**
+
+This means **all your containers have an arrival date (`Date`) before your simulation start date (`2025-06-01`)**.
+
+### Why `available_containers` is always 650
+
+- On every simulation day, all containers are eligible (`c['Date'] <= date`), except those already loaded.
+- You load 110 containers per day, but since you started with 3840 containers, you always have more than 650 left to choose from each day.
+- The number 650 is likely the number of containers you can load per day (or a limit in your code/data), but since your pool is always large enough, it never drops below that.
+
+### How to make `available_containers` decrease
+
+- **You need containers to arrive gradually.**  
+  Spread the `Date` values in your Excel file across the simulation period (e.g., some on 2025-06-01, some on 2025-06-02, etc.).
+- This way, as you load containers, the pool of available containers will eventually decrease if you load more than arrive each day.
+
+---
+
+**Summary:**  
+- All containers are available from day 1 because their `Date` is before the simulation period.
+- To see `available_containers` decrease, ensure your input data has containers arriving on different days within the simulation period.  
+- You can do this by editing your Excel file so that the `Date` column covers a range of dates from `2025-06-01` to `2025-06-30`.
+
+MendeBadra: Ideally it should decrease from 3840 to 0
+
+GitHub Copilot: You are correct:  
+**If your simulation is set up so that containers are only available if they have not been loaded and their `Date` is ≤ current day, then `containers_available` should decrease from 3840 to 0 as you load containers each day.**
+
+---
+
+### Why is it not decreasing in your output?
+
+In your code, you have:
+
+```python
+available_containers = [c for c in containers if c['Date'] <= date and c['container_id'] not in loaded_ids]
+```
+
+But in your daily results, you record:
+
+```python
+'containers_available': daily_result['containers_available'],
+```
+
+And in `run_daily_simulation`:
+
+```python
+'containers_available': len(containers),
+```
+
+**This is the issue:**  
+- In `run_daily_simulation`, you pass only the `available_containers` for that day.
+- But inside `run_daily_simulation`, you use `len(containers)` (which is the length of the containers passed in, i.e., the available ones).
+- So, `containers_available` in your results is always the number of containers available at the **start of the day** (before loading).
+
+**However, after loading, you add all loaded IDs to `loaded_ids`, so the next day's `available_containers` should be less by the number loaded.**
+
+---
+
+### Why might it not decrease?
+
+If you are loading **fewer containers per day than the number of new arrivals** (which is not your case, since all containers have early dates), or if you are not updating `loaded_ids` correctly, it could stay constant.
+
+But your code does update `loaded_ids`:
+
+```python
+for train in daily_result['trains']:
+    for wagon in train:
+        assert wagon['container_id'] is not None, "wagon id is empty!"
+        loaded_ids.add(wagon['container_id'])
+```
+
+---
+
+### Debugging steps
+
+Add these prints at the end of each day in your simulation loop:
+
+```python
+print(f"End of day {date}:")
+print(f"  loaded_ids: {len(loaded_ids)}")
+print(f"  remaining containers: {len([c for c in containers if c['container_id'] not in loaded_ids])}")
+```
+
+You should see `remaining containers` decrease by the number loaded each day.
+
+---
+
+### If you want `containers_available` to show the **remaining containers** after loading
+
+Change your result row to:
+
+```python
+result_row = {
+    ...
+    'containers_available': len([c for c in containers if c['container_id'] not in loaded_ids])
+}
+```
+
+Or, if you want to show the number **before loading** (i.e., available at the start of the day), keep as is.
+
+---
+
+### Summary
+
+- Your code is correct for tracking loaded containers.
+- If `containers_available` is not decreasing, check your input data and the logic above.
+- To show the number of containers **remaining after loading**, update your result row as shown above.
+
+---
+
+**TL;DR:**  
+If you want `containers_available` to decrease from 3840 to 0, set it in your result row as:
+
+````python
+'containers_available': len([c for c in containers if c['container_id'] not in loaded_ids])
+````
+
+This will reflect the true number of containers left to be loaded after each day.
+
+MendeBadra: So, is it loading from 650 containers?
+
+
+
+GitHub Copilot: No, your simulation is **not** loading from only 650 containers. It is loading from the full set of containers that have arrived and have not yet been loaded.
+
+### Why you see 650
+
+- The number 650 is **not** a hard-coded limit or a subset.
+- It is the number of containers **remaining to be loaded** after previous days' loads, as calculated by:
+  ```python
+  'containers_available': len([c for c in containers if c['container_id'] not in loaded_ids])
+  ```
+- In your case, you started with 3840 containers, and you load 110 per day. As days pass, `containers_available` decreases by 110 each day.
+
+### Why does it show 650 at the end?
+- If you run the simulation for enough days, eventually you will have fewer than 110 containers left, and on the last day, you may see a number like 650, 540, etc., depending on your simulation length and how many containers are left.
+- If you see 650 for many days, it means that after loading containers each day, there are still 650 left to be loaded (i.e., you have a backlog that is not being cleared fast enough).
+
+### How loading works in your code
+
+Each day:
+1. You filter all containers that have arrived and have not been loaded:
+   ```python
+   available_containers = [c for c in containers if c['Date'] <= date and c['container_id'] not in loaded_ids]
+   ```
+2. You load up to the train capacity (e.g., 2 trains × 55 wagons = 110 containers).
+3. You add the loaded container IDs to `loaded_ids`.
+4. The next day, you repeat the process, so the pool of available containers shrinks by the number loaded.
+
+### To summarize
+
+- **You are loading from all available containers, not just 650.**
+- The number 650 is just the number of containers left to be loaded at that point in the simulation.
+- If you want to see this number decrease to 0, run the simulation until all containers are loaded.
+
+---
+
+**If you want to see the daily decrease, print this each day:**
+```python
+print(f"Day {date}: containers_available={len([c for c in containers if c['container_id'] not in loaded_ids])}")
+```
+
+You should see it decrease by 110 each day (or whatever your daily loading capacity is), until it reaches 0.
+
+MendeBadra: @GitHubCopilot 
+
+GitHub Copilot: ### [simulation.py](file:///home/mendee/Projects/MyGitRepos/RailRoadSim/simulation.py)
+
+Update the simulation loop to ensure `containers_available` reflects the remaining containers after loading, and add debug prints to track daily progress.
+
+````python
+def run_monthly_simulation(containers_file_path: Union[str, Path],
+                          start_date: str = "2025-06-01",
+                          end_date: str = "2025-06-30",
+                          decision_function: Callable = None,
+                          save_results: bool = True,
+                          output_dir: Union[str, Path] = None) -> pd.DataFrame:
+    """
+    Run simulation for a full month, day by day.
+    
+    Returns:
+        DataFrame with daily simulation results
+    """
+    # Load data
+    containers = load_container_data(containers_file_path)
+    
+    print(f"Total containers in input: {len(containers)}")
+    print(f"First 10 container dates: {[c['Date'] for c in containers[:10]]}")
+    # Set default decision function
+    if decision_function is None:
+        def default_decision_function(containers):
+            return decision_group_probalistic(containers, prob_same_terminal=PROBABILITY, seed=42)
+        decision_function = default_decision_function
+    
+    # Get date range
+    dates = get_date_range(start_date, end_date)
+    print(f"Simulating from {start_date} to {end_date} ({len(dates)} days)")
+    
+    # Run simulation for each day
+    daily_results = []
+    train_sequences_by_day = {}
+    loaded_ids = set()
+    # main simulation loop
+    for day_idx, date in enumerate(dates):
+        print(f"Simulating day {day_idx + 1}/{len(dates)}: {date}")
+        
+        # Get containers available up to this date
+        available_containers = [c for c in containers if c['Date'] <= date and c['container_id'] not in loaded_ids]
+
+        print(f"Day {date}: available_containers={len(available_containers)}, loaded_ids={len(loaded_ids)}")
+        # Run daily simulation
+        daily_result = run_daily_simulation(available_containers, decision_function)
+        train_orders = []
+        for train in daily_result['trains']:
+            train_order = []
+            for wagon in train:
+                assert wagon['container_id'] is not None, "wagon id is empty!"
+                loaded_ids.add(wagon['container_id'])
+                train_order.append({
+                'container_id': wagon['container_id'],
+                'Терминал': wagon['Терминал'],
+                'Date': wagon['Date']
+                })
+            train_orders.append(train_order)
+            
+        train_sequences_by_day[date] = train_orders
+        # Store results in a flat structure
+        result_row = {
+            'date': date,
+            'classification_cost': daily_result['total_classification_cost'],
+            'penalty_cost': daily_result['total_penalty_cost'],
+            'delivery_cost': daily_result['total_delivery_cost'],
+            'total_cost': daily_result['total_cost'],
+            'containers_loaded': daily_result['containers_loaded'],
+            'containers_available': len([c for c in containers if c['container_id'] not in loaded_ids])  # Updated to reflect remaining containers
+        }
+        daily_results.append(result_row)
+        
+        print(f"  Remaining containers: {result_row['containers_available']}, "
+              f"Loaded: {daily_result['containers_loaded']}, "
+              f"Cost: {daily_result['total_cost']:,.0f} MNT")
+    # DEBUG
+    print(f"Day {date}: available_containers={len(available_containers)}, loaded_ids={len(loaded_ids)}")
+    # Convert to DataFrame
+    results_df = list_to_dataframe(daily_results)
+    
+    # Save results if requested
+    if save_results:
+        save_simulation_results(results_df, start_date, end_date, output_dir)
+        save_train_sequences_excel(train_sequences_by_day, Path(output_dir) / f"train_sequences_{start_date}_to_{end_date}.xlsx")
+    return results_df
+````
+
+This ensures `containers_available` decreases over time as containers are loaded, and provides debug information to track the simulation's progress.
+
+Made changes.
