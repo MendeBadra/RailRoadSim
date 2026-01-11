@@ -2,6 +2,9 @@
 
 This repository provides a simulation and cost analysis tool for train wagon delivery and optimization, tailored for logistics and railway operations in Mongolia.
 
+## Update 2026.01.10
+This repo has now a Google Colab notebook ready to run. You can find it [here](https://colab.research.google.com/drive/1skk-TRU8yzOvfFTxQOBEY21xxoEJNZ2A?usp=sharing).
+
 ## Overview
 - **Purpose:** Simulate the loading, delivery, and cost optimization of train wagons to various terminals using real and synthetic data.
 - **Key Features:**
@@ -54,4 +57,5 @@ Or use the provided `pyproject.toml` with Poetry or uv.
 - Implement new loading strategies by defining new decision functions and passing them to the loader.
 
 ## License
+
 This project is for research and educational purposes. Contact the author for other uses. 
